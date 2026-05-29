@@ -1,0 +1,44 @@
+:root {
+  --bg-base: #010D20;
+  --bg-navy: #012169;
+  --bg-surface-1: #01347A;
+  --bg-surface-2: #014099;
+
+  --text-primary: #F2F6FC;
+  --text-secondary: #8BA3C7;
+  --text-muted: #3D5A8A;
+  --text-brand: #86BC25;
+  --text-blue: #00A3E0;
+
+  --border-subtle: rgba(134, 188, 37, 0.08);
+  --border-default: rgba(134, 188, 37, 0.15);
+  --border-strong: rgba(134, 188, 37, 0.30);
+
+  --state-idle: #3D5A8A;
+  --state-listening: #86BC25;
+  --state-thinking: #F5A623;
+  --state-speaking: #00A3E0;
+  --state-error: #D93B3B;
+
+  --glow-listening: 0 0 0 8px rgba(134,188,37,0.18), 0 0 40px rgba(134,188,37,0.25), 0 0 80px rgba(134,188,37,0.12);
+  --glow-thinking: 0 0 0 8px rgba(245,166,35,0.14), 0 0 40px rgba(245,166,35,0.20);
+  --glow-speaking: 0 0 0 8px rgba(0,163,224,0.18), 0 0 40px rgba(0,163,224,0.25), 0 0 80px rgba(0,163,224,0.10);
+
+  --mic-default-bg: #01347A;
+  --mic-default-border: rgba(134,188,37,0.20);
+  --mic-hover-bg: #014099;
+  --mic-active-bg: #86BC25;
+  --mic-active-icon: #010D20;
+  --mic-disabled-opacity: 0.35;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  --ease-standard: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
