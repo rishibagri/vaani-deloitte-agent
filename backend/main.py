@@ -1,27 +1,43 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT
+from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMORY_ENABLED, DATABASE_URL
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
 from pipeline import SessionPipeline
 
-# these are module-level singletons loaded at startup
 loop_cache = LoopCache()
 musetalk = MuseTalkModel()
 
 active_sessions: dict[str, SessionPipeline] = {}
+# maps session_id → user_id before the WebSocket connects
+_session_user_map: dict[str, int] = {}
+
+face_memory = None
+if MEMORY_ENABLED:
+    from face_memory import FaceMemory
+    face_memory = FaceMemory(DATABASE_URL)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate()
     print("[SETUP] Starting Vaani backend...")
+
+    if MEMORY_ENABLED and face_memory is not None:
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, face_memory.connect)
+            print("[SETUP] Memory layer connected")
+        except Exception as e:
+            print(f"[SETUP] Memory layer failed to connect: {e}")
 
     if MUSETALK_ENABLED:
         musetalk.load()
@@ -36,6 +52,8 @@ async def lifespan(app: FastAPI):
     for pipeline in active_sessions.values():
         await pipeline.stop()
     active_sessions.clear()
+    if face_memory is not None:
+        face_memory.close()
 
 
 app = FastAPI(title="Vaani Backend", lifespan=lifespan)
@@ -68,8 +86,64 @@ async def create_session():
 
 @app.get("/transcript/{session_id}")
 async def get_transcript(session_id: str):
-    # placeholder, full transcript storage would use a db
     return {"session_id": session_id, "transcript": []}
+
+
+class FaceImageBody(BaseModel):
+    image: str  # base64 data-URL or raw base64
+
+
+class EnrollBody(BaseModel):
+    image: str
+    name: str
+    role: Optional[str] = None
+
+
+@app.post("/session/{session_id}/identify")
+async def identify_user(session_id: str, body: FaceImageBody):
+    """Try to identify the user by face. Returns known=True + profile or known=False."""
+    if face_memory is None or not face_memory.available:
+        return {"known": False, "reason": "face_recognition_unavailable"}
+    if not face_memory.connected:
+        return {"known": False, "reason": "db_unavailable"}
+
+    try:
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(None, face_memory.identify, body.image)
+    except Exception as e:
+        print(f"[MEMORY] identify error: {e}")
+        return {"known": False, "reason": "db_unavailable"}
+
+    if user is None:
+        return {"known": False}
+
+    _session_user_map[session_id] = user["id"]
+    return {"known": True, **user}
+
+
+@app.post("/session/{session_id}/enroll")
+async def enroll_user(session_id: str, body: EnrollBody):
+    """Enroll a new user by face + name. Returns their profile."""
+    if face_memory is None or not face_memory.available:
+        return {"enrolled": False, "reason": "face_recognition_unavailable"}
+    if not face_memory.connected:
+        return {"enrolled": False, "reason": "db_unavailable"}
+
+    try:
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(
+            None,
+            lambda: face_memory.enroll(body.image, body.name, body.role),
+        )
+    except Exception as e:
+        print(f"[MEMORY] enroll error: {e}")
+        return {"enrolled": False, "reason": "db_error"}
+
+    if user is None:
+        return {"enrolled": False, "reason": "no_face_detected"}
+
+    _session_user_map[session_id] = user["id"]
+    return {"enrolled": True, **user}
 
 
 @app.websocket("/ws/session/{session_id}")
@@ -89,12 +163,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         except Exception as e:
             print(f"[BROWSER] send_json error: {e}")
 
+    user_id = _session_user_map.pop(session_id, None)
+    user_context = ""
+    if user_id is not None and face_memory is not None:
+        loop = asyncio.get_event_loop()
+        user_context = await loop.run_in_executor(
+            None, face_memory.get_context_prompt, user_id
+        )
+
     pipeline = SessionPipeline(
         session_id=session_id,
         loop_cache=loop_cache,
         musetalk=musetalk,
         send_bytes=send_bytes,
-        send_json=send_json
+        send_json=send_json,
+        user_id=user_id,
+        user_context=user_context,
+        face_memory=face_memory,
     )
 
     active_sessions[session_id] = pipeline

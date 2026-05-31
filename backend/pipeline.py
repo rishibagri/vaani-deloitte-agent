@@ -4,18 +4,22 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import cv2
 
 from config import (
     BATCH_MS, MUSETALK_ENABLED, PRERENDERED_DIR,
-    KNOWN_RESPONSES_FILE, SAMPLE_RATE_MUSETALK, SAMPLE_RATE_GEMINI_OUT
+    KNOWN_RESPONSES_FILE, SAMPLE_RATE_MUSETALK, SAMPLE_RATE_GEMINI_OUT,
+    GEMINI_API_KEY, GEMINI_TEXT_MODEL,
 )
 from audio_utils import resample_24k_to_16k
 from gemini_agent import GeminiAgent
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
+
+if TYPE_CHECKING:
+    from face_memory import FaceMemory
 
 
 # 0x01 prefix = audio frame, 0x02 prefix = video frame
@@ -26,6 +30,29 @@ VIDEO_PREFIX = bytes([0x02])
 # how many samples make up one batch at 16kHz
 BATCH_SAMPLES = int((BATCH_MS / 1000) * SAMPLE_RATE_MUSETALK)
 FRAMES_PER_BATCH = max(1, BATCH_MS // 40)  # 40ms per frame at 25fps
+
+
+async def _generate_summary(transcript: list[dict]) -> str:
+    """Call Gemini text API to produce a 2-3 sentence session summary."""
+    if not transcript:
+        return ""
+    try:
+        from google import genai
+        turns = "\n".join(f"{t['role'].upper()}: {t['text']}" for t in transcript)
+        prompt = (
+            "Summarize the following conversation in 2-3 concise sentences. "
+            "Focus on the main topics discussed, the user's interests, and any follow-up items. "
+            "Write in third person (e.g. 'The user asked about...').\n\n" + turns
+        )
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = await client.aio.models.generate_content(
+            model=GEMINI_TEXT_MODEL,
+            contents=prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[PIPELINE] Summary generation error: {e}")
+        return ""
 
 
 def _load_known_responses() -> dict:
@@ -50,20 +77,33 @@ class SessionPipeline:
     Routes audio from Gemini through MuseTalk and back to the browser.
     """
 
-    def __init__(self, session_id: str, loop_cache: LoopCache,
-                 musetalk: MuseTalkModel, send_bytes, send_json):
+    def __init__(
+        self,
+        session_id: str,
+        loop_cache: LoopCache,
+        musetalk: MuseTalkModel,
+        send_bytes,
+        send_json,
+        user_id: Optional[int] = None,
+        user_context: str = "",
+        face_memory: "Optional[FaceMemory]" = None,
+    ):
         self.session_id = session_id
         self.loop_cache = loop_cache
         self.musetalk = musetalk
-        self.send_bytes = send_bytes   # coroutine: sends binary to browser
-        self.send_json = send_json     # coroutine: sends JSON to browser
+        self.send_bytes = send_bytes
+        self.send_json = send_json
+        self.user_id = user_id
+        self._face_memory = face_memory
 
-        self.agent = GeminiAgent(session_id)
+        self.agent = GeminiAgent(session_id, user_context=user_context)
         self.known_responses = _load_known_responses()
 
         self._audio_buffer = bytearray()
         self._state = "idle"
         self._running = False
+        self._current_language = "en"
+        self._audio_sent_in_turn = False
 
     async def start(self):
         """Connect to Gemini and begin the output processing loop."""
@@ -81,6 +121,7 @@ class SessionPipeline:
         """
         if isinstance(data, bytes):
             # raw PCM from browser mic
+            self._audio_sent_in_turn = True
             await self.agent.send_audio(data)
         else:
             try:
@@ -91,11 +132,16 @@ class SessionPipeline:
             msg_type = msg.get("type")
 
             if msg_type == "start_listening":
+                self._audio_sent_in_turn = False
                 await self._set_state("listening")
 
             elif msg_type == "stop_listening":
-                await self.agent.end_user_turn()
-                await self._set_state("thinking")
+                if not self._audio_sent_in_turn:
+                    # mic released with no audio — don't send a blank turn to Gemini
+                    await self._set_state("idle")
+                else:
+                    await self.agent.end_user_turn()
+                    await self._set_state("thinking")
 
             elif msg_type == "cancel":
                 await self.agent.cancel()
@@ -150,6 +196,7 @@ class SessionPipeline:
             elif item_type == "transcript_user":
                 await self.send_json(item)
                 lang = item.get("lang", "en")
+                self._current_language = lang
                 await self.send_json({"type": "language_detected", "code": lang})
 
             elif item_type == "turn_complete":
@@ -210,4 +257,30 @@ class SessionPipeline:
 
     async def stop(self):
         self._running = False
+        await self._save_memory()
         await self.agent.stop()
+
+    async def _save_memory(self):
+        """Generate a conversation summary and persist it to the memory DB."""
+        if self._face_memory is None or not self.agent.transcript:
+            return
+        try:
+            summary = await _generate_summary(self.agent.transcript)
+            if summary:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: self._face_memory.save_session(
+                        self.session_id, self.user_id, summary, self._current_language
+                    ),
+                )
+                if self.user_id is not None and self._current_language != "en":
+                    await loop.run_in_executor(
+                        None,
+                        lambda: self._face_memory.update_language(
+                            self.user_id, self._current_language
+                        ),
+                    )
+                print(f"[PIPELINE] Memory saved for session {self.session_id}")
+        except Exception as e:
+            print(f"[PIPELINE] Memory save failed: {e}")

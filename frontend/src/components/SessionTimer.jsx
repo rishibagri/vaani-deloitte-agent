@@ -17,17 +17,24 @@ export function SessionTimer({ running, onWarning }) {
     return () => clearInterval(id)
   }, [running, onWarning])
 
-  const mins = Math.floor(seconds / 60).toString().padStart(2, '0')
-  const secs = (seconds % 60).toString().padStart(2, '0')
+  const mins      = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const secs      = (seconds % 60).toString().padStart(2, '0')
   const isWarning = seconds >= 13 * 60
 
   return (
-    <span style={{
-      fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 11,
-      color: isWarning ? 'var(--state-thinking)' : 'var(--text-muted)',
-      transition: 'color 500ms'
-    }}>
+    <span
+      role="timer"
+      aria-label={`Session time: ${mins} minutes ${secs} seconds`}
+      style={{
+        fontFamily: "'Inter', sans-serif",
+        fontVariantNumeric: 'tabular-nums',
+        fontSize: 12,
+        fontWeight: 500,
+        letterSpacing: '0.04em',
+        color: isWarning ? 'var(--state-thinking)' : 'var(--text-muted)',
+        transition: 'color 500ms var(--ease-standard)',
+      }}
+    >
       {mins}:{secs}
     </span>
   )

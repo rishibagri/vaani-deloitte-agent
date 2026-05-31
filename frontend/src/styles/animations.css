@@ -1,73 +1,93 @@
+/* ═══════════════════════════════════════════════
+   Vaani Animations — ease-out only, no bounce
+═══════════════════════════════════════════════ */
+
+/* Avatar entrance */
 @keyframes avatar-reveal {
-  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  from { opacity: 0; transform: scale(0.94) translateY(20px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-@keyframes ring-pulse-blue {
-  0%   { transform: scale(1.00); opacity: 0.60; }
-  100% { transform: scale(1.50); opacity: 0; }
+/* Listening pulse — green glow breathes */
+@keyframes listening-pulse {
+  0%, 100% { box-shadow: var(--glow-listening); }
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(134,188,37,0.12),
+      0 0 80px rgba(134,188,37,0.22),
+      0 0 140px rgba(134,188,37,0.10),
+      inset 0 0 40px rgba(0,0,0,0.55);
+  }
 }
 
-@keyframes ring-pulse-green {
-  0%   { transform: scale(1.00); opacity: 0.50; }
-  100% { transform: scale(1.40); opacity: 0; }
-}
-
+/* Thinking spinner — slow, no bounce */
 @keyframes thinking-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
 
-@keyframes bubble-enter {
-  from { opacity: 0; transform: translateX(-10px) scale(0.95); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
+/* Thinking counter-ring */
+@keyframes thinking-spin-ccw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
 }
 
-@keyframes bubble-up {
-  to { opacity: 0; transform: translateY(-20px); }
+/* Transcript panel slide up */
+@keyframes transcript-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-@keyframes user-bubble-enter {
-  from { opacity: 0; transform: translateX(10px) scale(0.95); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
+/* Transcript line fade-up (when pushed off visible area) */
+@keyframes line-fade-up {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-10px); }
 }
 
-@keyframes word-in {
-  from { opacity: 0; transform: translateX(-3px); }
+/* Status dot pulse */
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1);   opacity: 1;   }
+  50%       { transform: scale(1.5); opacity: 0.5; }
+}
+
+/* Connection dot slow pulse */
+@keyframes dot-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* Mic ripple rings */
+@keyframes mic-ripple {
+  from { transform: scale(1);    opacity: 0.45; }
+  to   { transform: scale(1.90); opacity: 0; }
+}
+
+/* Waveform idle breathe */
+@keyframes wave-idle {
+  0%, 100% { transform: scaleY(0.25); }
+  50%       { transform: scaleY(0.60); }
+}
+
+/* Toast entrance */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: none; }
 }
 
+/* Quick reply chip */
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Cursor blink */
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
 }
 
-@keyframes dot-pulse {
-  0%, 100% { transform: scale(1.0); opacity: 1.0; }
-  50%       { transform: scale(1.5); opacity: 0.6; }
-}
-
-@keyframes message-enter {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
-}
-
-@keyframes mic-ripple {
-  from { transform: scale(1); opacity: 0.45; }
-  to   { transform: scale(1.9); opacity: 0; }
-}
-
-@keyframes wave-idle {
-  0%, 100% { transform: scaleY(0.3); }
-  50%       { transform: scaleY(0.7); }
-}
-
-@keyframes toast-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: none; }
-}
-
-@keyframes quick-reply-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+/* Glow idle ring breathe */
+@keyframes idle-ring-breathe {
+  0%, 100% { opacity: 0.14; }
+  50%       { opacity: 0.26; }
 }

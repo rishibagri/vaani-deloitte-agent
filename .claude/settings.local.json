@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx skills *)",
+      "Bash(node *)",
+      "Bash(/Users/rishii3/Desktop/deloitte/backend/.venv/bin/pip show *)",
+      "Bash(/Users/rishii3/Desktop/deloitte/backend/.venv/bin/python *)",
+      "Bash(brew services *)",
+      "Bash(psql -U rishii3 -lqt)",
+      "Bash(psql *)"
+    ]
+  }
+}

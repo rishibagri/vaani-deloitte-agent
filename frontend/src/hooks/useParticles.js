@@ -1,25 +1,33 @@
 import { useEffect, useRef } from 'react'
 
-const NODE_COUNT_DESKTOP = 90
-const NODE_COUNT_MOBILE = 50
-const CONNECTION_DISTANCE = 140
+const NODE_COUNT_DESKTOP = 80
+const NODE_COUNT_MOBILE  = 44
+const CONNECTION_DIST    = 130
 
-function makeNode(w, h, index) {
+function makeNode(w, h, i) {
   return {
-    x: Math.random() * w,
-    y: Math.random() * h,
-    vx: (Math.random() - 0.5) * 0.4,
-    vy: (Math.random() - 0.5) * 0.4,
-    radius: 1.5 + Math.random() * 1.5,
-    // half the nodes are green-tinted, half blue-tinted
-    isGreen: index % 2 === 0
+    x:       Math.random() * w,
+    y:       Math.random() * h,
+    vx:      (Math.random() - 0.5) * 0.42,
+    vy:      (Math.random() - 0.5) * 0.42,
+    radius:  1.2 + Math.random() * 1.4,
+    isGreen: i % 2 === 0,
   }
 }
 
+/* Base speed = 1.0 (idle). Speaking = 2×. */
+const STATE_SPEED = {
+  idle:      1.0,
+  listening: 1.5,
+  thinking:  0.55,
+  speaking:  2.0,
+}
+
 export function useParticles(canvasRef, appState) {
-  const nodesRef = useRef([])
-  const rafRef = useRef(null)
-  const stateRef = useRef(appState)
+  const nodesRef    = useRef([])
+  const rafRef      = useRef(null)
+  const stateRef    = useRef(appState)
+  const speedRef    = useRef(1.0)
 
   useEffect(() => {
     stateRef.current = appState
@@ -31,7 +39,7 @@ export function useParticles(canvasRef, appState) {
     const ctx = canvas.getContext('2d')
 
     const resize = () => {
-      canvas.width = window.innerWidth
+      canvas.width  = window.innerWidth
       canvas.height = window.innerHeight
       const count = window.innerWidth < 768 ? NODE_COUNT_MOBILE : NODE_COUNT_DESKTOP
       nodesRef.current = Array.from({ length: count }, (_, i) =>
@@ -42,45 +50,40 @@ export function useParticles(canvasRef, appState) {
     resize()
     window.addEventListener('resize', resize)
 
-    const speedForState = (state) => {
-      if (state === 'listening') return 0.35
-      if (state === 'thinking') return 0.15
-      if (state === 'speaking') return 0.45
-      return 0.20
-    }
+    const BASE_VEL = 0.20
 
     const draw = () => {
-      const w = canvas.width
-      const h = canvas.height
-      const state = stateRef.current
-      const speed = speedForState(state)
-      const opacityMult = state === 'thinking' ? 0.7 : state === 'idle' ? 1.0 : 1.4
+      const { width: w, height: h } = canvas
+      const targetSpeed = STATE_SPEED[stateRef.current] ?? 1.0
+
+      /* Smooth speed interpolation — avoids jarring jumps */
+      speedRef.current += (targetSpeed - speedRef.current) * 0.04
+      const mult = speedRef.current
 
       ctx.clearRect(0, 0, w, h)
 
-      for (const node of nodesRef.current) {
-        node.x += node.vx * speed / 0.20
-        node.y += node.vy * speed / 0.20
-        if (node.x < 0) node.x = w
-        if (node.x > w) node.x = 0
-        if (node.y < 0) node.y = h
-        if (node.y > h) node.y = 0
+      for (const n of nodesRef.current) {
+        n.x += n.vx * mult
+        n.y += n.vy * mult
+        if (n.x < 0) n.x = w
+        if (n.x > w) n.x = 0
+        if (n.y < 0) n.y = h
+        if (n.y > h) n.y = 0
       }
 
       const nodes = nodesRef.current
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[i].x - nodes[j].x
-          const dy = nodes[i].y - nodes[j].y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < CONNECTION_DISTANCE) {
-            const alpha = (1 - dist / CONNECTION_DISTANCE) * 0.12 * opacityMult
-            const color = nodes[i].isGreen
+          const dx   = nodes[i].x - nodes[j].x
+          const dy   = nodes[i].y - nodes[j].y
+          const dist = Math.hypot(dx, dy)
+          if (dist < CONNECTION_DIST) {
+            const alpha = (1 - dist / CONNECTION_DIST) * 0.15
+            ctx.beginPath()
+            ctx.strokeStyle = nodes[i].isGreen
               ? `rgba(134,188,37,${alpha})`
               : `rgba(0,163,224,${alpha})`
-            ctx.beginPath()
-            ctx.strokeStyle = color
-            ctx.lineWidth = 0.8
+            ctx.lineWidth = 0.75
             ctx.moveTo(nodes[i].x, nodes[i].y)
             ctx.lineTo(nodes[j].x, nodes[j].y)
             ctx.stroke()
@@ -88,13 +91,12 @@ export function useParticles(canvasRef, appState) {
         }
       }
 
-      for (const node of nodes) {
-        const alpha = 0.22 * opacityMult
+      for (const n of nodes) {
         ctx.beginPath()
-        ctx.fillStyle = node.isGreen
-          ? `rgba(134,188,37,${alpha})`
-          : `rgba(0,163,224,${alpha})`
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+        ctx.fillStyle = n.isGreen
+          ? 'rgba(134,188,37,0.16)'
+          : 'rgba(0,163,224,0.16)'
+        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2)
         ctx.fill()
       }
 

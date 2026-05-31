@@ -23,21 +23,34 @@ export function ToastContainer() {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 52, left: '50%', transform: 'translateX(-50%)',
-      zIndex: 200, display: 'flex', flexDirection: 'column', gap: 8,
-      alignItems: 'center'
+      position: 'fixed',
+      bottom: 56,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 'var(--z-toast)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      alignItems: 'center',
+      pointerEvents: 'none',
     }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: t.type === 'error' ? 'rgba(217,59,59,0.10)' : 'var(--bg-surface-2)',
-          border: `1px solid ${t.type === 'error' ? 'rgba(217,59,59,0.30)' : 'var(--border-default)'}`,
+          background: t.type === 'error' ? 'rgba(217,59,59,0.12)' : 'rgba(1,52,122,0.92)',
+          border: `1px solid ${t.type === 'error' ? 'rgba(217,59,59,0.32)' : 'var(--border-default)'}`,
           borderRadius: 'var(--radius-lg)',
-          padding: '10px 18px',
+          padding: '10px 20px',
           color: t.type === 'error' ? '#F09090' : 'var(--text-secondary)',
           fontSize: 13,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-          animation: 'toast-enter 200ms var(--ease-enter)',
-          maxWidth: 340, textAlign: 'center', whiteSpace: 'pre-wrap'
+          fontFamily: "'Inter', sans-serif",
+          fontWeight: 400,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          animation: 'toast-enter 200ms var(--ease-out-quart)',
+          maxWidth: 340,
+          textAlign: 'center',
+          whiteSpace: 'pre-wrap',
         }}>
           {t.message}
         </div>

@@ -45,6 +45,11 @@ KNOWN_RESPONSES_FILE = BASE_DIR / "known_responses.txt"
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", f"http://localhost:{FRONTEND_PORT}").split(",")
 
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+MEMORY_ENABLED = bool(DATABASE_URL)
+
+GEMINI_TEXT_MODEL = "gemini-2.0-flash"
+
 def validate():
     if not GEMINI_API_KEY:
         print("[SETUP] GEMINI_API_KEY is not set in .env")
