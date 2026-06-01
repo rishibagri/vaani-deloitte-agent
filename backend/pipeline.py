@@ -100,7 +100,7 @@ class SessionPipeline:
         self.known_responses = _load_known_responses()
 
         self._audio_buffer = bytearray()
-        self._state = "idle"
+        self._state = ""   # empty so _set_state("idle") always fires the initial message
         self._running = False
         self._current_language = "en"
         self._audio_sent_in_turn = False
@@ -258,6 +258,15 @@ class SessionPipeline:
     async def stop(self):
         self._running = False
         await self._save_memory()
+        # Background semantic memory save (Supabase or local JSON)
+        if len(self.agent.transcript) > 4:
+            try:
+                from memory import save_conversation
+                asyncio.create_task(
+                    save_conversation(self.session_id, self.agent.transcript, self._current_language)
+                )
+            except Exception as e:
+                print(f"[PIPELINE] Background memory save error: {e}")
         await self.agent.stop()
 
     async def _save_memory(self):

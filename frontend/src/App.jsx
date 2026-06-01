@@ -1,56 +1,51 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useWebSocket } from './hooks/useWebSocket'
-import { useMicrophone } from './hooks/useMicrophone'
-import { useAudioPlayback } from './hooks/useAudioPlayback'
-import { useParticles } from './hooks/useParticles'
+import { useWebSocket }    from './hooks/useWebSocket'
+import { useMicrophone }   from './hooks/useMicrophone'
+import { useAudioPlayback }from './hooks/useAudioPlayback'
 import { useConversation } from './hooks/useConversation'
-import { useFaceCapture } from './hooks/useFaceCapture'
-import { AvatarDisplay } from './components/AvatarDisplay'
-import { AgentBubble } from './components/AgentBubble'
-import { UserBubble } from './components/UserBubble'
-import { MicButton } from './components/MicButton'
-import { StatusBadge } from './components/StatusBadge'
-import { AudioWaveform } from './components/AudioWaveform'
-import { LanguagePill } from './components/LanguagePill'
-import { Header } from './components/Header'
-import { CaptionBand } from './components/CaptionBand'
-import { QuickReplies } from './components/QuickReplies'
+import { useFaceCapture }  from './hooks/useFaceCapture'
+
+import { BootSequence }       from './components/BootSequence'
+import { ParticleCanvas }     from './components/ParticleCanvas'
+import { AvatarDisplay }      from './components/AvatarDisplay'
+import { TranscriptOverlay }  from './components/TranscriptOverlay'
+import { HUDReadout }         from './components/HUDReadout'
+import { Header }             from './components/Header'
+import { MicButton }          from './components/MicButton'
+import { StatusBadge }        from './components/StatusBadge'
+import { QuickReplies }       from './components/QuickReplies'
 import { ToastContainer, toast } from './components/ToastContainer'
 import { NameCollectionOverlay } from './components/NameCollectionOverlay'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 export default function App() {
-  const [sessionId, setSessionId] = useState(null)
-  const [appState, setAppState] = useState('idle')
-  const [connected, setConnected] = useState('connecting')
-  const [currentLang, setCurrentLang] = useState('en')
-  const [captionsOn, setCaptionsOn] = useState(true)
-  const [suggestions, setSuggestions] = useState([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [bootDone,       setBootDone]       = useState(false)
+  const [sessionId,      setSessionId]      = useState(null)
+  const [appState,       setAppState]       = useState('idle')
+  const [connected,      setConnected]      = useState('connecting')
+  const [currentLang,    setCurrentLang]    = useState('en')
+  const [suggestions,    setSuggestions]    = useState([])
+  const [showSuggestions,setShowSuggestions]= useState(false)
   const [sessionRunning, setSessionRunning] = useState(false)
+  const [geminiReady,   setGeminiReady]    = useState(false)
 
-  // memory / face ID state
-  const [identityReady, setIdentityReady] = useState(false)
-  const [showNameOverlay, setShowNameOverlay] = useState(false)
+  /* face ID */
+  const [identityReady,  setIdentityReady]  = useState(false)
+  const [showNameOverlay,setShowNameOverlay]= useState(false)
   const pendingImageRef = useRef(null)
 
-  const particlesCanvasRef = useRef(null)
   const videoFrameHandlerRef = useRef(null)
-
-  useParticles(particlesCanvasRef, appState)
 
   const { status: cameraStatus, captureFrame } = useFaceCapture()
 
-  const { messages, agentStreamBuffer, userInterim, detectedLanguage, handleMessage: handleConvMessage } =
-    useConversation()
+  const {
+    messages, agentStreamBuffer, userInterim, detectedLanguage, handleMessage: handleConvMessage,
+  } = useConversation()
 
   const audioPlayback = useAudioPlayback()
 
-  const onAudioChunk = useCallback((buf) => {
-    audioPlayback.enqueue(buf)
-  }, [audioPlayback])
-
+  const onAudioChunk = useCallback((buf) => audioPlayback.enqueue(buf), [audioPlayback])
   const onVideoFrame = useCallback((buf) => {
     if (videoFrameHandlerRef.current) videoFrameHandlerRef.current(buf)
   }, [])
@@ -64,11 +59,8 @@ export default function App() {
       setSessionRunning(false)
     } else if (msg.type === 'state') {
       setAppState(msg.value)
-      if (msg.value === 'idle') {
-        setShowSuggestions(true)
-      } else {
-        setShowSuggestions(false)
-      }
+      setGeminiReady(true)
+      setShowSuggestions(msg.value === 'idle')
     } else if (msg.type === 'suggestions') {
       setSuggestions(msg.items || [])
     } else if (msg.type === 'session_renewed') {
@@ -79,16 +71,15 @@ export default function App() {
     handleConvMessage(msg)
   }, [handleConvMessage])
 
-  // only connect WebSocket after face identification is resolved
   const { sendJson, sendBinary } = useWebSocket({
     sessionId: identityReady ? sessionId : null,
     onAudioChunk,
     onVideoFrame,
     onMessage,
-    backendUrl: BACKEND_URL
+    backendUrl: BACKEND_URL,
   })
 
-  // Step 1 — create session
+  /* Step 1 — create session */
   useEffect(() => {
     fetch(`${BACKEND_URL}/session`, { method: 'POST' })
       .then(r => r.json())
@@ -96,22 +87,13 @@ export default function App() {
       .catch(() => setConnected('error'))
   }, [])
 
-  // Step 2 — once session + camera are both ready, try to identify the user
+  /* Step 2 — identify user once camera + session are ready */
   useEffect(() => {
     if (!sessionId || cameraStatus === 'idle' || cameraStatus === 'requesting') return
+    if (cameraStatus === 'unavailable') { setIdentityReady(true); return }
 
-    if (cameraStatus === 'unavailable') {
-      // no camera — proceed without memory
-      setIdentityReady(true)
-      return
-    }
-
-    // camera is ready — capture a frame and identify
     const image = captureFrame()
-    if (!image) {
-      setIdentityReady(true)
-      return
-    }
+    if (!image) { setIdentityReady(true); return }
 
     fetch(`${BACKEND_URL}/session/${sessionId}/identify`, {
       method: 'POST',
@@ -123,21 +105,16 @@ export default function App() {
         if (data.known) {
           toast(`Welcome back, ${data.name}!`)
         } else if (!data.reason) {
-          // Unknown face — genuinely not enrolled yet, ask for name
           pendingImageRef.current = image
           setShowNameOverlay(true)
-          return  // don't set identityReady yet — wait for overlay
+          return
         }
-        // Any reason string (db_unavailable, face_recognition_unavailable, etc.)
-        // means we can't identify — proceed without memory, don't ask for name
         setIdentityReady(true)
       })
       .catch(() => setIdentityReady(true))
   }, [sessionId, cameraStatus, captureFrame])
 
-  const onMicChunk = useCallback((buffer) => {
-    sendBinary(buffer)
-  }, [sendBinary])
+  const onMicChunk = useCallback((buf) => sendBinary(buf), [sendBinary])
 
   const { isRecording, amplitudes, startRecording, stopRecording } =
     useMicrophone({ onChunk: onMicChunk })
@@ -156,10 +133,7 @@ export default function App() {
   const handleNameSubmit = useCallback(({ name, role }) => {
     const image = pendingImageRef.current
     setShowNameOverlay(false)
-    if (!image || !sessionId) {
-      setIdentityReady(true)
-      return
-    }
+    if (!image || !sessionId) { setIdentityReady(true); return }
     fetch(`${BACKEND_URL}/session/${sessionId}/enroll`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -167,13 +141,9 @@ export default function App() {
     })
       .then(r => r.json())
       .then(data => {
-        if (data.enrolled) {
-          toast(`Nice to meet you, ${data.name}!`)
-        } else if (data.reason === 'no_face_detected') {
-          toast('No face detected — memory not saved', 'error')
-        } else if (data.reason === 'db_unavailable' || data.reason === 'db_error') {
-          toast('Memory unavailable — name not saved', 'error')
-        }
+        if (data.enrolled)           toast(`Nice to meet you, ${data.name}!`)
+        else if (data.reason === 'no_face_detected') toast('No face detected — memory not saved', 'error')
+        else if (data.reason?.startsWith('db'))      toast('Memory unavailable', 'error')
       })
       .catch(() => toast('Enrollment failed', 'error'))
       .finally(() => setIdentityReady(true))
@@ -194,49 +164,39 @@ export default function App() {
     setShowSuggestions(false)
   }, [sendJson])
 
-  const captionText = agentStreamBuffer ||
-    (messages.length > 0 && messages[messages.length - 1].role === 'agent'
-      ? messages[messages.length - 1].text
-      : '')
+  /* Transcript overlay content */
+  const lastAgentMsg = messages.length > 0 && messages[messages.length - 1].role === 'agent'
+    ? messages[messages.length - 1].text
+    : ''
+  const agentText  = agentStreamBuffer || lastAgentMsg
+  const isStreaming = !!agentStreamBuffer
 
-  const agentFinalMessages = messages.filter(m => m.role === 'agent')
   const userFinalText = messages.length > 0 && messages[messages.length - 1].role === 'user'
     ? messages[messages.length - 1].text
     : ''
+  const userText = isRecording ? userInterim : userFinalText
+
+  const mainVisible = bootDone
 
   return (
-    <div style={{ minHeight: '100vh', position: 'relative', overflow: 'hidden' }}>
-      {/* Particle canvas */}
-      <canvas
-        ref={particlesCanvasRef}
-        aria-hidden="true"
-        style={{
-          position: 'fixed', inset: 0,
-          zIndex: 'var(--z-particles)',
-          pointerEvents: 'none'
-        }}
-      />
+    <>
+      {/* Particle canvas + background + corner brackets */}
+      <ParticleCanvas appState={appState} />
 
-      {/* Background radial gradient */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'fixed', inset: 0,
-          zIndex: 'var(--z-bg)', pointerEvents: 'none',
-          background: 'radial-gradient(ellipse 110% 90% at 50% -10%, #01347A 0%, #012169 28%, #010D20 70%)'
-        }}
-      />
+      {/* Boot sequence — shows once per browser session */}
+      {!bootDone && (
+        <BootSequence onComplete={() => setBootDone(true)} />
+      )}
 
+      {/* Header */}
       <Header
         connected={connected}
         onLanguageChange={handleLanguageChange}
         currentLang={currentLang}
-        captionsOn={captionsOn}
-        onToggleCaptions={() => setCaptionsOn(o => !o)}
         sessionRunning={sessionRunning}
-        onSessionWarning={(secs) => toast(`Session renewing in ${Math.floor(secs / 60)} min...`)}
       />
 
+      {/* Main stage */}
       <main
         role="main"
         style={{
@@ -248,60 +208,43 @@ export default function App() {
           alignItems: 'center',
           justifyContent: 'center',
           paddingTop: 'var(--header-height)',
-          paddingBottom: captionsOn ? 'var(--caption-height)' : 0,
-          gap: 24,
+          paddingBottom: 120,
+          gap: 28,
+          opacity: mainVisible ? 1 : 0,
+          transform: mainVisible ? 'scale(1)' : 'scale(0.96)',
+          transition: 'opacity 500ms var(--ease-out-quart), transform 500ms var(--ease-out-quart)',
         }}
       >
-        {/* Avatar stage — hero element */}
-        <div style={{ position: 'relative', zIndex: 'var(--z-avatar)' }}>
+        {/* Avatar + HUD */}
+        <div style={{ position: 'relative' }}>
           <AvatarDisplay
             appState={appState}
+            amplitudes={amplitudes}
             onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
           />
 
-          <div style={{
-            position: 'absolute',
-            bottom: -20,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 'var(--z-bubbles)'
-          }}>
-            <LanguagePill
-              detected={detectedLanguage || (currentLang !== 'en' ? { code: currentLang } : null)}
-            />
+          {/* HUD readouts — hidden on mobile via CSS */}
+          <div style={{ display: 'contents' }} className="hud-layer">
+            <HUDReadout position="top-left"     appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
+            <HUDReadout position="top-right"    appState={appState} currentLang={detectedLanguage?.code || currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
+            <HUDReadout position="bottom-left"  appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
+            <HUDReadout position="bottom-right" appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
           </div>
-
-          {/* Floating speech bubbles — positioned relative to avatar */}
-          <AgentBubble
-            streamBuffer={agentStreamBuffer}
-            finalMessages={agentFinalMessages}
-            detectedLang={detectedLanguage}
-          />
-          <UserBubble
-            interimText={isRecording ? userInterim : ''}
-            finalText={userFinalText}
-          />
         </div>
 
-        {/* State + waveform row */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 16,
-          zIndex: 'var(--z-content)'
-        }}>
-          <StatusBadge appState={appState} />
-          <AudioWaveform amplitudes={amplitudes} visible={isRecording} />
-        </div>
+        {/* Status badge */}
+        <StatusBadge appState={appState} />
 
-        {/* Primary action */}
+        {/* Mic button */}
         <MicButton
           isRecording={isRecording}
-          isDisabled={appState === 'thinking' || connected !== 'connected'}
+          isDisabled={!geminiReady || appState === 'thinking' || connected !== 'connected'}
           onStart={handleMicStart}
           onStop={handleMicStop}
           appState={appState}
         />
 
-        {/* Context suggestions */}
+        {/* Suggestions */}
         <QuickReplies
           suggestions={suggestions}
           onSelect={handleQuickReply}
@@ -309,7 +252,14 @@ export default function App() {
         />
       </main>
 
-      <CaptionBand text={captionText} visible={captionsOn} />
+      {/* Transcript overlay */}
+      <TranscriptOverlay
+        agentText={agentText}
+        isStreaming={isStreaming}
+        userText={userText}
+        currentLang={detectedLanguage?.code || currentLang}
+      />
+
       <ToastContainer />
 
       {showNameOverlay && (
@@ -318,6 +268,18 @@ export default function App() {
           onSkip={handleNameSkip}
         />
       )}
-    </div>
+
+      {/* Mobile HUD hide */}
+      <style>{`
+        @media (max-width: 768px) {
+          .hud-layer > * { display: none !important; }
+        }
+        @media (max-width: 520px) {
+          :root {
+            --avatar-size: var(--avatar-size-mobile);
+          }
+        }
+      `}</style>
+    </>
   )
 }

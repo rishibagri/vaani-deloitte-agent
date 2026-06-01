@@ -1,53 +1,49 @@
-/* 20-bar waveform. Center bars are taller (gaussian envelope) for a
-   more natural voice-spectrum appearance. */
-const BAR_COUNT = 20
+/* Circular audio waveform — 24 radial bars around the avatar.
+   This component is kept as a standalone export but its logic is
+   already embedded inside AvatarDisplay as Layer 6. Import and
+   use directly here if you need it outside the avatar context. */
 
-function gaussianWeight(i, count) {
-  const center = (count - 1) / 2
-  const sigma  = count / 4
-  return Math.exp(-((i - center) ** 2) / (2 * sigma ** 2))
-}
+const BAR_COUNT = 24
+const CENTER = 230  /* half of 460px container */
+const R_INNER = 204 /* just outside 400px video (200px radius + 4px gap) */
+const MAX_BAR = 22  /* max bar height in px */
 
-export function AudioWaveform({ amplitudes, visible }) {
-  /* Pad or trim to exactly BAR_COUNT */
-  const bars = Array.from({ length: BAR_COUNT }, (_, i) => {
-    const raw = amplitudes[i] ?? 0
-    return Math.max(0.08, raw) * gaussianWeight(i, BAR_COUNT) * 1.6
+export function AudioWaveform({ amplitudes = [], visible, size = 460 }) {
+  const expanded = Array.from({ length: BAR_COUNT }, (_, i) => {
+    const srcIdx = Math.floor((i / BAR_COUNT) * (amplitudes.length || 5))
+    return Math.max(0.08, amplitudes[srcIdx] ?? 0)
   })
 
   return (
-    <div
+    <svg
       aria-hidden="true"
+      width={size}
+      height={size}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2.5,
-        height: 28,
+        display: 'block',
         opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0) scaleX(1)' : 'translateY(4px) scaleX(0.85)',
-        transition: 'opacity 280ms var(--ease-out-quart), transform 280ms var(--ease-out-quart)',
-        willChange: 'opacity, transform',
+        transition: 'opacity 400ms var(--ease-standard)',
+        pointerEvents: 'none',
       }}
     >
-      {bars.map((amp, i) => (
-        <div
-          key={i}
-          style={{
-            width: 2.5,
-            height: 28,
-            borderRadius: 2,
-            background: 'var(--brand-green)',
-            transformOrigin: 'center',
-            transform: `scaleY(${Math.min(1, Math.max(0.08, amp))})`,
-            transition: 'transform 55ms var(--ease-standard)',
-            opacity: 0.75 + amp * 0.25,
-            animation: (visible && amp < 0.12)
-              ? `wave-idle 900ms ease-in-out infinite`
-              : 'none',
-            animationDelay: `${i * 45}ms`,
-          }}
-        />
-      ))}
-    </div>
+      {expanded.map((amp, i) => {
+        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2
+        const barH  = amp * MAX_BAR
+        const x1 = CENTER + R_INNER * Math.cos(angle)
+        const y1 = CENTER + R_INNER * Math.sin(angle)
+        const x2 = CENTER + (R_INNER + barH) * Math.cos(angle)
+        const y2 = CENTER + (R_INNER + barH) * Math.sin(angle)
+        return (
+          <line
+            key={i}
+            x1={x1} y1={y1}
+            x2={x2} y2={y2}
+            stroke="rgba(0,163,224,0.70)"
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        )
+      })}
+    </svg>
   )
 }

@@ -7,7 +7,12 @@
       "Bash(/Users/rishii3/Desktop/deloitte/backend/.venv/bin/python *)",
       "Bash(brew services *)",
       "Bash(psql -U rishii3 -lqt)",
-      "Bash(psql *)"
+      "Bash(psql *)",
+      "Bash(pg_isready)",
+      "Bash(python3 *)",
+      "Bash(/Users/rishii3/Desktop/deloitte/backend/.venv/bin/python3 -c ' *)",
+      "Bash(backend/.venv/bin/python3 *)",
+      "Bash(backend/.venv/bin/pip show *)"
     ]
   }
 }

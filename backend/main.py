@@ -171,6 +171,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             None, face_memory.get_context_prompt, user_id
         )
 
+    # Append semantic memory context (Supabase or local JSON)
+    try:
+        from memory import get_relevant_context
+        mem_ctx = await get_relevant_context("general conversation", limit=3)
+        if mem_ctx:
+            user_context = f"{user_context}\n\n{mem_ctx}".strip() if user_context else mem_ctx
+    except Exception as e:
+        print(f"[MEMORY] Context fetch error: {e}")
+
     pipeline = SessionPipeline(
         session_id=session_id,
         loop_cache=loop_cache,

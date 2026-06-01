@@ -1,4 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+const LABEL_KEY    = 'vaani_mic_label_shown'
+const RIPPLE_DELAYS = [0, 600]
 
 function MicIcon({ color, size = 26 }) {
   return (
@@ -20,11 +23,9 @@ function MicIcon({ color, size = 26 }) {
   )
 }
 
-const RIPPLE_DELAYS = [0, 600]
-
 export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }) {
-  const holdRef    = useRef(false)
-  const buttonRef  = useRef(null)
+  const holdRef   = useRef(false)
+  const [showLabel, setShowLabel] = useState(!localStorage.getItem(LABEL_KEY))
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -49,6 +50,15 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
     }
   }, [isDisabled, onStart, onStop])
 
+  const handleStart = () => {
+    if (isDisabled) return
+    onStart()
+    if (showLabel) {
+      localStorage.setItem(LABEL_KEY, '1')
+      setShowLabel(false)
+    }
+  }
+
   const isThinking = appState === 'thinking'
 
   const bg = isDisabled
@@ -57,7 +67,7 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
     ? 'var(--mic-active-bg)'
     : 'var(--mic-default-bg)'
 
-  const borderColor = isRecording
+  const border = isRecording
     ? 'transparent'
     : isDisabled
     ? 'var(--border-subtle)'
@@ -69,21 +79,14 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
     ? 'var(--text-muted)'
     : 'var(--text-secondary)'
 
-  const stateLabel = isDisabled
+  const ariaLabel = isDisabled
     ? (isThinking ? 'Vaani is thinking — please wait' : 'Microphone unavailable')
     : isRecording
     ? 'Recording — release to send'
     : 'Hold to speak'
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
       <div style={{ position: 'relative', width: 72, height: 72 }}>
         {/* Ripple rings when recording */}
         {isRecording && RIPPLE_DELAYS.map((delay) => (
@@ -95,8 +98,7 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
               inset: 0,
               borderRadius: '50%',
               border: '1.5px solid rgba(134,188,37,0.45)',
-              animation: `mic-ripple 1600ms var(--ease-out-quart) infinite`,
-              animationDelay: `${delay}ms`,
+              animation: `mic-ripple 1600ms var(--ease-out-quart) ${delay}ms infinite`,
               willChange: 'transform, opacity',
               pointerEvents: 'none',
             }}
@@ -104,12 +106,11 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
         ))}
 
         <button
-          ref={buttonRef}
-          onPointerDown={() => !isDisabled && onStart()}
-          onPointerUp={()   => !isDisabled && onStop()}
-          onPointerLeave={()=> isRecording && !isDisabled && onStop()}
+          onPointerDown={handleStart}
+          onPointerUp={()    => !isDisabled && onStop()}
+          onPointerLeave={()  => isRecording && !isDisabled && onStop()}
           disabled={isDisabled}
-          aria-label={stateLabel}
+          aria-label={ariaLabel}
           aria-pressed={isRecording}
           style={{
             position: 'relative',
@@ -117,53 +118,69 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
             height: 72,
             borderRadius: '50%',
             background: bg,
-            border: `1.5px solid ${borderColor}`,
+            border: `1.5px solid ${border}`,
+            boxShadow: isRecording
+              ? 'inset 0 0 0 8px rgba(1,52,122,0.3), 0 0 0 3px rgba(134,188,37,0.22), 0 0 28px rgba(134,188,37,0.30)'
+              : 'inset 0 0 0 8px rgba(1,52,122,0.5)',
             cursor: isDisabled ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isDisabled ? 'var(--mic-disabled-opacity)' : 1,
-            transform: isRecording ? 'scale(1.08)' : 'scale(1)',
-            boxShadow: isRecording
-              ? '0 0 0 3px rgba(134,188,37,0.22), 0 0 28px rgba(134,188,37,0.28), 0 4px 20px rgba(0,0,0,0.35)'
-              : '0 4px 20px rgba(0,0,0,0.30)',
+            transform: isRecording ? 'scale(1.10)' : 'scale(1)',
             transition: [
-              `transform 180ms var(--ease-out-quart)`,
-              `background var(--dur-base) var(--ease-standard)`,
-              `box-shadow 220ms var(--ease-standard)`,
-              `opacity var(--dur-fast) var(--ease-standard)`,
+              'transform 220ms var(--ease-spring)',
+              'background var(--dur-base) var(--ease-standard)',
+              'box-shadow 220ms var(--ease-standard)',
+              'opacity var(--dur-fast) var(--ease-standard)',
+              'border-color 220ms var(--ease-standard)',
             ].join(', '),
             outline: 'none',
             WebkitTapHighlightColor: 'transparent',
             userSelect: 'none',
           }}
           onFocus={(e) => {
-            e.currentTarget.style.boxShadow = isRecording
-              ? '0 0 0 3px rgba(134,188,37,0.22), 0 0 28px rgba(134,188,37,0.28), 0 0 0 5px rgba(0,163,224,0.45)'
-              : '0 4px 20px rgba(0,0,0,0.30), 0 0 0 3px rgba(0,163,224,0.45)'
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,163,224,0.45)'
           }}
           onBlur={(e) => {
             e.currentTarget.style.boxShadow = isRecording
-              ? '0 0 0 3px rgba(134,188,37,0.22), 0 0 28px rgba(134,188,37,0.28), 0 4px 20px rgba(0,0,0,0.35)'
-              : '0 4px 20px rgba(0,0,0,0.30)'
+              ? 'inset 0 0 0 8px rgba(1,52,122,0.3), 0 0 0 3px rgba(134,188,37,0.22), 0 0 28px rgba(134,188,37,0.30)'
+              : 'inset 0 0 0 8px rgba(1,52,122,0.5)'
+          }}
+          onMouseEnter={(e) => {
+            if (!isDisabled && !isRecording) {
+              e.currentTarget.style.borderColor = 'rgba(134,188,37,0.50)'
+              e.currentTarget.style.transform = 'scale(1.04)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isDisabled && !isRecording) {
+              e.currentTarget.style.borderColor = 'var(--mic-default-border)'
+              e.currentTarget.style.transform = 'scale(1)'
+            }
           }}
         >
           <MicIcon color={iconColor} />
         </button>
       </div>
 
-      <span
-        aria-hidden="true"
-        style={{
-          fontFamily: "'Inter', sans-serif",
-          fontWeight: 500,
-          fontSize: 11,
-          color: 'var(--text-muted)',
-          letterSpacing: '0.03em',
-        }}
-      >
-        {isRecording ? 'Release to send' : 'Hold SPACE to speak'}
-      </span>
+      {/* HOLD SPACE label — disappears after first use */}
+      {showLabel && !isRecording && (
+        <span
+          aria-hidden="true"
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 9,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            opacity: 0.85,
+            userSelect: 'none',
+          }}
+        >
+          HOLD SPACE TO ACTIVATE
+        </span>
+      )}
     </div>
   )
 }
