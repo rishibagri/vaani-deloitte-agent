@@ -20,7 +20,6 @@ from musetalk_wrapper import MuseTalkModel
 
 if TYPE_CHECKING:
     from face_memory import FaceMemory
-    from gemini_agent import GeminiAgent
 
 
 # 0x01 prefix = audio frame, 0x02 prefix = video frame
@@ -88,7 +87,6 @@ class SessionPipeline:
         user_id: Optional[int] = None,
         user_context: str = "",
         face_memory: "Optional[FaceMemory]" = None,
-        warmed_agent: "Optional[GeminiAgent]" = None,
     ):
         self.session_id = session_id
         self.loop_cache = loop_cache
@@ -98,7 +96,7 @@ class SessionPipeline:
         self.user_id = user_id
         self._face_memory = face_memory
 
-        self.agent = warmed_agent or GeminiAgent(session_id, user_context=user_context)
+        self.agent = GeminiAgent(session_id, user_context=user_context)
         self.known_responses = _load_known_responses()
 
         self._audio_buffer = bytearray()

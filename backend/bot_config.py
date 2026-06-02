@@ -42,6 +42,9 @@ BOT_DEFAULTS: dict = {
 _ALLOWED_VOICES = {"Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Perseus"}
 _ALLOWED_MODELS = {
     "gemini-3.1-flash-live-preview",
+    "gemini-2.0-flash-live-001",
+    "gemini-live-2.5-flash-preview",
+    "gemini-2.5-flash-preview-native-audio-dialog",
 }
 
 # In-memory cache:  slug → full config dict (includes "id" key)
@@ -73,7 +76,7 @@ def _validate_in_place(cfg: dict) -> None:
     if cfg.get("agent_voice") not in _ALLOWED_VOICES:
         cfg["agent_voice"] = "Puck"
     if cfg.get("llm_model") not in _ALLOWED_MODELS:
-        cfg["llm_model"] = "gemini-2.0-flash-live-001"
+        cfg["llm_model"] = BOT_DEFAULTS["llm_model"]
 
 
 def _read_bot_file(slug: str) -> Optional[dict]:

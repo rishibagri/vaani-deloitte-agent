@@ -14,14 +14,12 @@ from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMOR
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
 from pipeline import SessionPipeline
-from gemini_agent import GeminiAgent
 
 loop_cache = LoopCache()
 musetalk = MuseTalkModel()
 
 active_sessions: dict[str, SessionPipeline] = {}
 _session_user_map: dict[str, int] = {}
-_warmed_agents:   dict[str, GeminiAgent] = {}  # pre-warmed before WS connects
 
 face_memory = None
 if MEMORY_ENABLED:
@@ -84,19 +82,7 @@ async def health():
 @app.post("/session")
 async def create_session():
     session_id = str(uuid.uuid4())
-    asyncio.create_task(_prewarm_agent(session_id))
     return {"session_id": session_id}
-
-
-async def _prewarm_agent(session_id: str):
-    """Open the Gemini session in the background while the browser loads the UI."""
-    agent = GeminiAgent(session_id)
-    try:
-        await agent.start()
-        _warmed_agents[session_id] = agent
-        print(f"[PREWARM] Gemini ready for {session_id[:8]}")
-    except Exception as e:
-        print(f"[PREWARM] Failed: {e}")
 
 
 @app.get("/transcript/{session_id}")
@@ -195,8 +181,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     except Exception as e:
         print(f"[MEMORY] Context fetch error: {e}")
 
-    warmed_agent = _warmed_agents.pop(session_id, None)
-
     pipeline = SessionPipeline(
         session_id=session_id,
         loop_cache=loop_cache,
@@ -206,7 +190,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         user_id=user_id,
         user_context=user_context,
         face_memory=face_memory,
-        warmed_agent=warmed_agent,
     )
 
     active_sessions[session_id] = pipeline

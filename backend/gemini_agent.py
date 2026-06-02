@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import time
 from google import genai
 from google.genai import types
 
@@ -30,7 +31,7 @@ class GeminiAgent:
             return f"{self.user_context}\n\n{SYSTEM_PROMPT}"
         return SYSTEM_PROMPT
 
-    def _build_config(self) -> dict:
+    def _build_config(self, voice: str = None) -> dict:
         return {
             "response_modalities": ["AUDIO"],
             "output_audio_transcription": {},
@@ -40,29 +41,38 @@ class GeminiAgent:
             },
             "speech_config": {
                 "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": GEMINI_VOICE}
+                    "prebuilt_voice_config": {"voice_name": voice or GEMINI_VOICE}
                 }
             },
             "system_instruction": self._build_system_instruction(),
         }
 
     async def start(self):
-        if self._running:
-            return  # already started via pre-warm
         self.client = genai.Client(api_key=GEMINI_API_KEY)
         self._running = True
         await self._open_session()
 
     async def _open_session(self):
+        try:
+            from bot_config import get_active
+            bot = get_active()
+            model = bot.get("llm_model") or GEMINI_MODEL
+            voice = bot.get("agent_voice") or GEMINI_VOICE
+        except Exception:
+            model, voice = GEMINI_MODEL, GEMINI_VOICE
+
+        t0 = time.time()
+        print(f"[GEMINI] Connecting to {model}...")
         self._ctx = self.client.aio.live.connect(
-            model=GEMINI_MODEL,
-            config=self._build_config(),
+            model=model,
+            config=self._build_config(voice=voice),
         )
+        print(f"[GEMINI] Context created ({time.time()-t0:.2f}s), awaiting handshake...")
         self.session = await self._ctx.__aenter__()
+        print(f"[GEMINI] Session opened in {time.time()-t0:.2f}s for {self.session_id}")
         self._send_task = asyncio.create_task(self._send_loop())
         self._recv_task = asyncio.create_task(self._receive_loop())
         self._renewal_task = asyncio.create_task(self._renewal_loop())
-        print(f"[GEMINI] Session opened for {self.session_id}")
 
     async def _send_loop(self):
         # outer loop restarts the inner logic if it crashes mid-turn

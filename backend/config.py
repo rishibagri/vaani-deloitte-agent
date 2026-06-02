@@ -8,7 +8,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent.parent
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = "gemini-3.1-flash-live-preview"
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE   = os.getenv("AGENT_VOICE", "Puck")
 
 AGENT_NAME = os.getenv("AGENT_NAME", "Vaani")
