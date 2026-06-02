@@ -13,6 +13,7 @@ from config import (
     MUSETALK_DIR, MUSETALK_UNET_PATH, MUSETALK_UNET_CFG, MUSETALK_ENABLED, BASE_DIR,
     MUSETALK_GPU_BATCH, MOUTH_SCALE, MOUTH_DX, MOUTH_DY, MUSETALK_FP16,
     MOUTH_MASK_TOP, MOUTH_MASK_FULL,
+    MUSETALK_MOUTH_CACHE, MUSETALK_CACHE_SIM, MUSETALK_CACHE_MAX,
 )
 from audio_utils import encode_jpeg
 
@@ -47,6 +48,9 @@ class MuseTalkModel:
         self.audio_processor = None  # AudioProcessor
         self._latent_cache   = None  # precomputed 8-ch latents per loop frame
         self._mouth_alpha    = None  # feathered mouth-region blend mask
+        # Neural mouth codebook (pose-normalized): audio-keyed generated mouths.
+        self._ck_keys        = None  # np.ndarray [N, 384], L2-normalized audio keys
+        self._ck_imgs        = []    # list of canonical 256x256 BGR float32 mouths
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -161,6 +165,16 @@ class MuseTalkModel:
         finally:
             os.chdir(_old_cwd)
 
+    def _cache_add(self, key: np.ndarray, mouth: np.ndarray):
+        """Add a (normalized audio key, canonical mouth) pair to the codebook."""
+        if not MUSETALK_MOUTH_CACHE:
+            return
+        if len(self._ck_imgs) >= MUSETALK_CACHE_MAX:
+            return  # cap reached — codebook is warm enough
+        self._ck_imgs.append(mouth)
+        k = key.reshape(1, -1)
+        self._ck_keys = k if self._ck_keys is None else np.concatenate([self._ck_keys, k], axis=0)
+
     def _whisper_chunks_safe(self, feats, num_frames: int):
         """
         Reimplementation of AudioProcessor.get_whisper_chunk with bounds clamping
@@ -242,73 +256,82 @@ class MuseTalkModel:
             if n_frames == 0:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
-            result_frames = []
             timesteps = torch.tensor([0], device=self.device)
-            BATCH = max(1, MUSETALK_GPU_BATCH)  # frames per UNet/VAE forward pass
+            BATCH = max(1, MUSETALK_GPU_BATCH)
 
+            # ── 1. Compute an audio key per frame (mean-pooled, L2-normalized) ──
+            keys = []
+            for i in range(n_frames):
+                k = whisper_chunks[i].float().mean(dim=0).cpu().numpy()  # [384]
+                nrm = np.linalg.norm(k) or 1e-8
+                keys.append((k / nrm).astype(np.float32))
+
+            # ── 2. Codebook lookup: decide which frames are hits vs misses ──
+            canonical = [None] * n_frames     # canonical 256 mouth per frame
+            miss_idx = []
+            if MUSETALK_MOUTH_CACHE and self._ck_keys is not None and len(self._ck_imgs) > 0:
+                kmat = np.stack(keys, axis=0)                  # [n, 384]
+                sims = kmat @ self._ck_keys.T                  # cosine (both normalized)
+                best = sims.argmax(axis=1)
+                bestsim = sims[np.arange(n_frames), best]
+                for i in range(n_frames):
+                    if bestsim[i] >= MUSETALK_CACHE_SIM:
+                        canonical[i] = self._ck_imgs[best[i]]  # cache hit — skip neural net
+                    else:
+                        miss_idx.append(i)
+            else:
+                miss_idx = list(range(n_frames))
+
+            # ── 3. Run UNet+VAE only on the misses, in GPU batches ──
             with torch.no_grad():
-                for start in range(0, n_frames, BATCH):
-                    end = min(start + BATCH, n_frames)
-                    bsz = end - start
-
-                    # Stack 8-channel latents for this sub-batch
+                for start in range(0, len(miss_idx), BATCH):
+                    grp = miss_idx[start:start + BATCH]
                     lat_list = []
-                    for i in range(start, end):
+                    for i in grp:
                         if self._latent_cache is not None and i < len(indices):
                             lat_list.append(self._latent_cache[indices[i]])
                         else:
                             lat_list.append(self.vae.get_latents_for_unet(face_crops[i]).to(
                                 device=self.device, dtype=self.weight_dtype))
-                    latent_batch = torch.cat(lat_list, dim=0)  # [bsz, 8, 32, 32]
-
-                    # Stack audio features [bsz, 50, 384] + positional encoding
-                    audio_batch = torch.stack(
-                        [whisper_chunks[i] for i in range(start, end)], dim=0
-                    ).to(device=self.device, dtype=self.weight_dtype)
+                    latent_batch = torch.cat(lat_list, dim=0)
+                    audio_batch = torch.stack([whisper_chunks[i] for i in grp], dim=0).to(
+                        device=self.device, dtype=self.weight_dtype)
                     audio_batch = self.pe(audio_batch)
-
-                    ts = timesteps.repeat(bsz)
-                    pred_latents = self.unet.model(
-                        latent_batch, ts, encoder_hidden_states=audio_batch
+                    pred = self.unet.model(
+                        latent_batch, timesteps.repeat(len(grp)), encoder_hidden_states=audio_batch
                     ).sample
+                    recon = self.vae.decode_latents(pred)  # [g, 256, 256, 3] BGR uint8
+                    for n, i in enumerate(grp):
+                        mouth = recon[n].astype(np.float32)
+                        canonical[i] = mouth
+                        self._cache_add(keys[i], mouth)
 
-                    # decode_latents returns BGR uint8 numpy [bsz, 256, 256, 3]
-                    recon = self.vae.decode_latents(pred_latents)
+            # ── 4. Composite every frame: inverse-warp canonical mouth onto pose ──
+            result_frames = []
+            for i in range(n_frames):
+                full_frame = full_frames[i]
+                M = transforms[i]
+                H, W = full_frame.shape[:2]
+                gen = canonical[i]
 
-                    for j in range(bsz):
-                        i = start + j
-                        full_frame = full_frames[i]
-                        M = transforms[i]                # full-frame -> canonical 256
-                        gen = recon[j].astype(np.float32)  # 256x256 canonical face
-                        H, W = full_frame.shape[:2]
+                if M is None or gen is None:
+                    result_frames.append(cv2.cvtColor(full_frame, cv2.COLOR_BGR2RGB))
+                    continue
 
-                        # Optional fine-tune nudge in canonical space.
-                        if MOUTH_SCALE != 1.0 or MOUTH_DX != 0.0 or MOUTH_DY != 0.0:
-                            c = 128.0
-                            s = MOUTH_SCALE
-                            A = np.array([
-                                [s, 0, c - s * c + MOUTH_DX * 256],
-                                [0, s, c - s * c + MOUTH_DY * 256],
-                            ], dtype=np.float32)
-                            gen = cv2.warpAffine(gen, A, (256, 256),
-                                                 flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+                if MOUTH_SCALE != 1.0 or MOUTH_DX != 0.0 or MOUTH_DY != 0.0:
+                    c, s = 128.0, MOUTH_SCALE
+                    A = np.array([[s, 0, c - s * c + MOUTH_DX * 256],
+                                  [0, s, c - s * c + MOUTH_DY * 256]], dtype=np.float32)
+                    gen = cv2.warpAffine(gen, A, (256, 256),
+                                         flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
-                        if M is None:
-                            result_frames.append(cv2.cvtColor(full_frame, cv2.COLOR_BGR2RGB))
-                            continue
-
-                        # Inverse-warp the generated face AND the mouth mask from the
-                        # canonical 256 crop back onto the real face position. Because
-                        # the mask rides the same transform, it lands exactly on the
-                        # real mouth no matter how the head moved.
-                        M_inv = cv2.invertAffineTransform(M)
-                        gen_full = cv2.warpAffine(gen, M_inv, (W, H), flags=cv2.INTER_LINEAR)
-                        mask_full = cv2.warpAffine(self._mouth_alpha, M_inv, (W, H),
-                                                   flags=cv2.INTER_LINEAR)[:, :, None]
-
-                        base = full_frame.astype(np.float32)
-                        out = base * (1.0 - mask_full) + gen_full * mask_full
-                        result_frames.append(cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_BGR2RGB))
+                M_inv = cv2.invertAffineTransform(M)
+                gen_full = cv2.warpAffine(gen, M_inv, (W, H), flags=cv2.INTER_LINEAR)
+                mask_full = cv2.warpAffine(self._mouth_alpha, M_inv, (W, H),
+                                           flags=cv2.INTER_LINEAR)[:, :, None]
+                base = full_frame.astype(np.float32)
+                out = base * (1.0 - mask_full) + gen_full * mask_full
+                result_frames.append(cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_BGR2RGB))
 
             return result_frames
 

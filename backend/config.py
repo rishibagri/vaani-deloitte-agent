@@ -42,6 +42,13 @@ MUSETALK_GPU_BATCH    = int(os.getenv("MUSETALK_GPU_BATCH", 16))
 # MUSETALK_FP16=false to fall back to float32 if you see artifacts/NaNs.
 MUSETALK_FP16         = os.getenv("MUSETALK_FP16", "true").strip().lower() == "true"
 
+# Neural mouth codebook: cache generated mouths (in pose-normalized canonical
+# space) keyed by audio feature, and reuse on similar audio — skipping the
+# UNet+VAE for repeated visemes. Self-warms as the avatar talks.
+MUSETALK_MOUTH_CACHE  = os.getenv("MUSETALK_MOUTH_CACHE", "true").strip().lower() == "true"
+MUSETALK_CACHE_SIM    = float(os.getenv("MUSETALK_CACHE_SIM", 0.985))  # cosine hit threshold
+MUSETALK_CACHE_MAX    = int(os.getenv("MUSETALK_CACHE_MAX", 512))      # max cached visemes
+
 # Fine-tune nudge in canonical space (landmark alignment should make these
 # unnecessary — leave neutral unless the mouth still looks slightly off).
 MOUTH_SCALE = float(os.getenv("MOUTH_SCALE", 1.0))    # <1 shrinks the generated mouth

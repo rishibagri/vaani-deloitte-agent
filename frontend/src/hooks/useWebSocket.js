@@ -6,10 +6,11 @@ const VIDEO_TYPE = 0x02
 export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage, backendUrl }) {
   const ws = useRef(null)
   const retryCount = useRef(0)
-  const MAX_RETRIES = 5
+  const closedByUs = useRef(false)
 
   const connect = useCallback(() => {
     if (!sessionId) return
+    closedByUs.current = false
     const base = (backendUrl || 'http://localhost:8000').replace(/^http/, 'ws')
     const url = `${base}/ws/session/${sessionId}`
 
@@ -38,8 +39,10 @@ export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage,
 
     ws.current.onclose = () => {
       onMessage({ type: 'disconnected' })
-      if (retryCount.current < MAX_RETRIES) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount.current), 10000)
+      // Retry forever with capped backoff so the page reconnects on its own
+      // after a backend restart (which can take a while during model loading).
+      if (!closedByUs.current) {
+        const delay = Math.min(1000 * Math.pow(2, retryCount.current), 5000)
         retryCount.current++
         setTimeout(connect, delay)
       }
@@ -53,6 +56,7 @@ export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage,
   useEffect(() => {
     connect()
     return () => {
+      closedByUs.current = true
       if (ws.current) ws.current.close()
     }
   }, [connect])

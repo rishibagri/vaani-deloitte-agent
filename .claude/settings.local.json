@@ -19,7 +19,8 @@
       "Bash(npm run *)",
       "Bash(git checkout *)",
       "Bash(grep -E '\\\\.\\(sh|bat|cmd|ps1|txt|toml|cfg|ini|yml|yaml|json|md\\)$')",
-      "Bash(xargs ls -la)"
+      "Bash(xargs ls -la)",
+      "Bash(python -m py_compile backend/musetalk_wrapper.py backend/loop_cache.py backend/pipeline.py backend/main.py backend/config.py)"
     ]
   }
 }
