@@ -12,6 +12,7 @@ os.environ["MPLBACKEND"] = "Agg"
 from config import (
     MUSETALK_DIR, MUSETALK_UNET_PATH, MUSETALK_UNET_CFG, MUSETALK_ENABLED, BASE_DIR,
     MUSETALK_GPU_BATCH, MOUTH_SCALE, MOUTH_DX, MOUTH_DY, MUSETALK_FP16,
+    MOUTH_MASK_TOP, MOUTH_MASK_FULL,
 )
 from audio_utils import encode_jpeg
 
@@ -115,8 +116,8 @@ class MuseTalkModel:
         so the composite has no visible seam.
         """
         alpha = np.zeros((size, size), dtype=np.float32)
-        top  = int(size * 0.46)   # above: fully original
-        full = int(size * 0.62)   # below: fully generated mouth
+        top  = int(size * MOUTH_MASK_TOP)    # above: fully original
+        full = int(size * MOUTH_MASK_FULL)   # below: fully generated mouth
         for y in range(size):
             if y <= top:
                 a = 0.0
@@ -207,7 +208,7 @@ class MuseTalkModel:
         return chunks
 
     def _infer_sync(self, audio_bytes_16k: bytes, face_crops: list,
-                    full_frames: list, bboxes: list, indices: list) -> list:
+                    full_frames: list, transforms: list, indices: list) -> list:
         import torch
         import cv2
 
@@ -277,40 +278,37 @@ class MuseTalkModel:
                     for j in range(bsz):
                         i = start + j
                         full_frame = full_frames[i]
-                        bbox       = bboxes[i]
-                        generated_bgr = recon[j]
+                        M = transforms[i]                # full-frame -> canonical 256
+                        gen = recon[j].astype(np.float32)  # 256x256 canonical face
+                        H, W = full_frame.shape[:2]
 
-                        result_frame = full_frame.copy()
-                        if bbox is not None and len(bbox) >= 4:
-                            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-                            face_h, face_w = y2 - y1, x2 - x1
-                            if face_h > 0 and face_w > 0:
-                                gen = cv2.resize(generated_bgr, (face_w, face_h)).astype(np.float32)
+                        # Optional fine-tune nudge in canonical space.
+                        if MOUTH_SCALE != 1.0 or MOUTH_DX != 0.0 or MOUTH_DY != 0.0:
+                            c = 128.0
+                            s = MOUTH_SCALE
+                            A = np.array([
+                                [s, 0, c - s * c + MOUTH_DX * 256],
+                                [0, s, c - s * c + MOUTH_DY * 256],
+                            ], dtype=np.float32)
+                            gen = cv2.warpAffine(gen, A, (256, 256),
+                                                 flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
-                                # Affine correction: scale about center + nudge, to
-                                # align the generated mouth with the real face geometry.
-                                if MOUTH_SCALE != 1.0 or MOUTH_DX != 0.0 or MOUTH_DY != 0.0:
-                                    cx, cy = face_w / 2.0, face_h / 2.0
-                                    s = MOUTH_SCALE
-                                    tx = cx - s * cx + MOUTH_DX * face_w
-                                    ty = cy - s * cy + MOUTH_DY * face_h
-                                    M = np.array([[s, 0, tx], [0, s, ty]], dtype=np.float32)
-                                    gen = cv2.warpAffine(
-                                        gen, M, (face_w, face_h),
-                                        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE,
-                                    )
+                        if M is None:
+                            result_frames.append(cv2.cvtColor(full_frame, cv2.COLOR_BGR2RGB))
+                            continue
 
-                                roi = result_frame[y1:y2, x1:x2].astype(np.float32)
-                                # Mouth-only feathered blend: keep original face,
-                                # swap only the lower mouth/jaw region.
-                                if self._mouth_alpha is not None:
-                                    a = cv2.resize(self._mouth_alpha, (face_w, face_h))[:, :, None]
-                                    blended = roi * (1.0 - a) + gen * a
-                                else:
-                                    blended = gen
-                                result_frame[y1:y2, x1:x2] = blended.astype(np.uint8)
+                        # Inverse-warp the generated face AND the mouth mask from the
+                        # canonical 256 crop back onto the real face position. Because
+                        # the mask rides the same transform, it lands exactly on the
+                        # real mouth no matter how the head moved.
+                        M_inv = cv2.invertAffineTransform(M)
+                        gen_full = cv2.warpAffine(gen, M_inv, (W, H), flags=cv2.INTER_LINEAR)
+                        mask_full = cv2.warpAffine(self._mouth_alpha, M_inv, (W, H),
+                                                   flags=cv2.INTER_LINEAR)[:, :, None]
 
-                        result_frames.append(cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB))
+                        base = full_frame.astype(np.float32)
+                        out = base * (1.0 - mask_full) + gen_full * mask_full
+                        result_frames.append(cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_BGR2RGB))
 
             return result_frames
 
@@ -326,13 +324,13 @@ class MuseTalkModel:
                     pass
 
     async def infer_batch(self, audio_bytes_16k: bytes, face_crops: list,
-                          full_frames: list, bboxes: list, indices: list) -> list:
+                          full_frames: list, transforms: list, indices: list) -> list:
         if not self._loaded:
             return []
         loop   = asyncio.get_event_loop()
         frames = await loop.run_in_executor(
             self._executor, self._infer_sync,
-            audio_bytes_16k, face_crops, full_frames, bboxes, indices,
+            audio_bytes_16k, face_crops, full_frames, transforms, indices,
         )
         return [encode_jpeg(f) for f in frames]
 

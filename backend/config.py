@@ -42,11 +42,16 @@ MUSETALK_GPU_BATCH    = int(os.getenv("MUSETALK_GPU_BATCH", 16))
 # MUSETALK_FP16=false to fall back to float32 if you see artifacts/NaNs.
 MUSETALK_FP16         = os.getenv("MUSETALK_FP16", "true").strip().lower() == "true"
 
-# Mouth alignment correction (tune if the generated mouth is offset/scaled).
-# Fractions of the face-box size. Negative DX = shift left, negative DY = shift up.
-MOUTH_SCALE = float(os.getenv("MOUTH_SCALE", 0.95))   # <1 shrinks the generated mouth
-MOUTH_DX    = float(os.getenv("MOUTH_DX", -0.02))     # horizontal nudge
-MOUTH_DY    = float(os.getenv("MOUTH_DY", -0.03))     # vertical nudge
+# Fine-tune nudge in canonical space (landmark alignment should make these
+# unnecessary — leave neutral unless the mouth still looks slightly off).
+MOUTH_SCALE = float(os.getenv("MOUTH_SCALE", 1.0))    # <1 shrinks the generated mouth
+MOUTH_DX    = float(os.getenv("MOUTH_DX", 0.0))       # horizontal nudge (frac of 256)
+MOUTH_DY    = float(os.getenv("MOUTH_DY", 0.0))       # vertical nudge (frac of 256)
+
+# Mouth-blend vertical band (fractions of the canonical 256 crop). The canonical
+# mouth sits ~72% down; blend the lower face from MOUTH_MASK_TOP downward.
+MOUTH_MASK_TOP  = float(os.getenv("MOUTH_MASK_TOP", 0.50))
+MOUTH_MASK_FULL = float(os.getenv("MOUTH_MASK_FULL", 0.62))
 SAMPLE_RATE_IN        = 16000
 SAMPLE_RATE_GEMINI_OUT = 24000
 SAMPLE_RATE_MUSETALK  = 16000

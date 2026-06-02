@@ -8,6 +8,16 @@ os.environ["MPLBACKEND"] = "Agg"
 
 from config import MUSETALK_DIR, BASE_VIDEO_PATH, BASE_DIR
 
+# Canonical 5-point face template in the 256x256 crop MuseTalk operates on.
+# Order matches YuNet landmarks: right eye, left eye, nose, right mouth, left mouth.
+_CANON_256 = np.float32([
+    [96,  92],   # right eye
+    [160, 92],   # left eye
+    [128, 138],  # nose tip
+    [100, 184],  # right mouth corner
+    [156, 184],  # left mouth corner
+])
+
 
 def _add_musetalk_to_path():
     musetalk_str = str(MUSETALK_DIR)
@@ -17,25 +27,24 @@ def _add_musetalk_to_path():
 
 class LoopCache:
     """
-    Pre-loads all frames from the avatar loop video and runs face detection once at startup.
-    This avoids running detection on every inference call, which would add ~20ms per batch.
+    Pre-loads the avatar loop video and computes, per frame, a similarity
+    transform that warps the face into a canonical 256x256 crop (landmark-aligned
+    via YuNet). MuseTalk runs in that canonical space; the generated mouth is
+    inverse-warped back, so it tracks the moving head precisely with no per-frame
+    scale/position jitter. Falls back to a box-as-affine crop if YuNet is absent.
     """
 
     def __init__(self, video_path: Path = BASE_VIDEO_PATH):
         self.video_path = video_path
         self.full_frames = []
         self.face_crops = []
-        self.bboxes = []
+        self.transforms = []   # per-frame 2x3 affine M: full-frame -> canonical 256
         self.frame_count = 0
         self.idx = 0
         self._loaded = False
 
     def load(self):
-        """
-        Read every frame from the loop video and run face detection.
-        Stores face crops and bounding boxes so inference only needs to run the UNet.
-        """
-        print("[SETUP] Loading loop video and precomputing face crops...")
+        print("[SETUP] Loading loop video and computing face alignment...")
 
         cap = cv2.VideoCapture(str(self.video_path))
         if not cap.isOpened():
@@ -52,151 +61,126 @@ class LoopCache:
         if not raw_frames:
             raise RuntimeError("[SETUP] Video has no frames")
 
-        print(f"[SETUP] Loaded {len(raw_frames)} frames, running face detection...")
-
+        print(f"[SETUP] Loaded {len(raw_frames)} frames, aligning faces...")
         _add_musetalk_to_path()
 
-        try:
-            raise NotImplementedError("DWPose skipped — using OpenCV directly")
-        except Exception as e:
-            print("[SETUP] Trying OpenCV face detection fallback...")
-            try:
-                coords = self._detect_faces_opencv(raw_frames)
-                coords = self._stabilize_boxes(coords, raw_frames[0].shape[1], raw_frames[0].shape[0])
-                frame_list = raw_frames
-                self.full_frames = frame_list
-                self.bboxes = coords
-                self.face_crops = self._crop_faces(frame_list, coords)
-                print(f"[SETUP] OpenCV face detection succeeded — {len(self.face_crops)} crops cached.")
-            except Exception as e2:
-                print(f"[SETUP] OpenCV detection also failed: {e2}")
-                print("[SETUP] Falling back to full-frame mode")
-                self.full_frames = raw_frames
-                h, w = raw_frames[0].shape[:2]
-                self.bboxes = [(0, 0, w, h)] * len(raw_frames)
-                self.face_crops = [cv2.resize(f, (256, 256)) for f in raw_frames]
-                self.frame_count = len(self.full_frames)
-                self._loaded = True
-                print(f"[SETUP] Loop cache ready with {self.frame_count} frames")
-                return
+        h_img, w_img = raw_frames[0].shape[:2]
+        transforms = self._compute_transforms(raw_frames, w_img, h_img)
+
+        self.full_frames = raw_frames
+        self.transforms = transforms
+        self.face_crops = [
+            cv2.warpAffine(f, M, (256, 256), flags=cv2.INTER_LINEAR)
+            for f, M in zip(raw_frames, transforms)
+        ]
 
         self.frame_count = len(self.full_frames)
         self._loaded = True
-        print(f"[SETUP] Loop cache ready with {self.frame_count} frames")
+        print(f"[SETUP] Loop cache ready with {self.frame_count} aligned frames")
 
-    def _detect_faces_opencv(self, frames: list) -> list:
-        """
-        Per-frame face detection. Prefers YuNet (accurate, tracks the moving head);
-        falls back to Haar cascade if the YuNet model isn't present. Boxes that
-        fail detection inherit the previous frame's box to avoid flicker.
-        """
+    # ── face alignment ──────────────────────────────────────────────────────
+
+    def _compute_transforms(self, frames: list, w_img: int, h_img: int) -> list:
+        """Return a per-frame 2x3 affine mapping full-frame -> canonical 256 crop."""
         yunet_path = BASE_DIR / "models" / "face" / "face_detection_yunet_2023mar.onnx"
         detector = None
         if yunet_path.exists():
             try:
                 detector = cv2.FaceDetectorYN.create(str(yunet_path), "", (320, 320), score_threshold=0.6)
-                print("[SETUP] Using YuNet for loop-video face tracking")
+                print("[SETUP] Using YuNet landmark alignment")
             except Exception as e:
-                print(f"[SETUP] YuNet init failed ({e}); using Haar cascade")
+                print(f"[SETUP] YuNet init failed ({e}); using box alignment")
 
-        coords = []
-        last = None
+        # Collect 5-point landmarks per frame (or None)
+        landmarks = []
         for frame in frames:
-            box = None
-            h_img, w_img = frame.shape[:2]
+            lm = None
             if detector is not None:
                 detector.setInputSize((w_img, h_img))
                 _, faces = detector.detect(frame)
                 if faces is not None and len(faces) > 0:
-                    f = max(faces, key=lambda r: r[2] * r[3])
-                    x, y, w, h = f[0], f[1], f[2], f[3]
-                    box = self._pad_box(x, y, w, h, w_img, h_img)
-            else:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-                hits = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-                if len(hits) > 0:
-                    x, y, w, h = max(hits, key=lambda r: r[2] * r[3])
-                    box = self._pad_box(x, y, w, h, w_img, h_img)
+                    r = max(faces, key=lambda f: f[2] * f[3])
+                    lm = np.float32([
+                        [r[4], r[5]], [r[6], r[7]], [r[8], r[9]],
+                        [r[10], r[11]], [r[12], r[13]],
+                    ])
+            landmarks.append(lm)
 
-            if box is None:
-                box = last  # reuse previous frame's box to avoid a flicker/gap
-            else:
-                last = box
-            coords.append(box)
-        return coords
+        # Fill gaps with last good landmarks, then lightly smooth to kill jitter
+        landmarks = self._fill_and_smooth(landmarks)
 
-    def _stabilize_boxes(self, coords: list, w_img: int, h_img: int) -> list:
-        """
-        Lock every box to the median width/height so the mouth never scales
-        frame-to-frame; keep each box's center so it still tracks the moving head.
-        """
-        valid = [c for c in coords if c is not None]
-        if not valid:
-            return coords
-        widths  = sorted(c[2] - c[0] for c in valid)
-        heights = sorted(c[3] - c[1] for c in valid)
-        mw = widths[len(widths) // 2]
-        mh = heights[len(heights) // 2]
-
-        out = []
-        last = None
-        for c in coords:
-            if c is None:
-                out.append(last)
-                continue
-            cx = (c[0] + c[2]) // 2
-            cy = (c[1] + c[3]) // 2
-            x1 = max(0, cx - mw // 2)
-            y1 = max(0, cy - mh // 2)
-            x2 = min(w_img, x1 + mw)
-            y2 = min(h_img, y1 + mh)
-            box = (x1, y1, x2, y2)
-            out.append(box)
-            last = box
-        return out
+        transforms = []
+        last_M = None
+        for lm in landmarks:
+            M = None
+            if lm is not None:
+                M, _ = cv2.estimateAffinePartial2D(lm, _CANON_256, method=cv2.LMEDS)
+            if M is None:
+                M = last_M if last_M is not None else self._box_affine(frames[0], w_img, h_img)
+            transforms.append(M.astype(np.float32))
+            last_M = M
+        return transforms
 
     @staticmethod
-    def _pad_box(x, y, w, h, w_img, h_img, pad_ratio=0.25):
-        pad = int(min(w, h) * pad_ratio)
-        x1 = max(0, int(x - pad))
-        y1 = max(0, int(y - pad))
-        x2 = min(w_img, int(x + w + pad))
-        y2 = min(h_img, int(y + h + pad))
-        return (x1, y1, x2, y2)
+    def _fill_and_smooth(landmarks: list, window: int = 3) -> list:
+        # Forward-fill None gaps
+        last = None
+        filled = []
+        for lm in landmarks:
+            if lm is None:
+                lm = last
+            else:
+                last = lm
+            filled.append(lm)
+        # Back-fill any leading Nones
+        nxt = None
+        for i in range(len(filled) - 1, -1, -1):
+            if filled[i] is None:
+                filled[i] = nxt
+            else:
+                nxt = filled[i]
+        if any(f is None for f in filled):
+            return filled  # no landmarks at all
+        # Moving-average smoothing over the loop
+        n = len(filled)
+        smoothed = []
+        for i in range(n):
+            acc = np.zeros((5, 2), np.float32)
+            cnt = 0
+            for j in range(i - window // 2, i + window // 2 + 1):
+                acc += filled[j % n]
+                cnt += 1
+            smoothed.append(acc / cnt)
+        return smoothed
 
-    def _crop_faces(self, frames, coords):
-        crops = []
-        for frame, coord in zip(frames, coords):
-            if coord is None or len(coord) < 4:
-                crops.append(np.zeros((256, 256, 3), dtype=np.uint8))
-                continue
-            x1, y1, x2, y2 = int(coord[0]), int(coord[1]), int(coord[2]), int(coord[3])
-            x1, y1 = max(0, x1), max(0, y1)
-            crop = frame[y1:y2, x1:x2]
-            if crop.size == 0:
-                crops.append(np.zeros((256, 256, 3), dtype=np.uint8))
-                continue
-            crops.append(cv2.resize(crop, (256, 256)))
-        return crops
+    @staticmethod
+    def _box_affine(frame, w_img, h_img):
+        """Fallback: center-square box -> 256 crop as an affine (scale+translate)."""
+        side = int(min(w_img, h_img) * 0.6)
+        cx, cy = w_img // 2, int(h_img * 0.42)
+        x1 = max(0, cx - side // 2)
+        y1 = max(0, cy - side // 2)
+        s = 256.0 / side
+        return np.float32([[s, 0, -s * x1], [0, s, -s * y1]])
+
+    # ── batch access ────────────────────────────────────────────────────────
 
     def next_batch(self, n: int):
         if not self._loaded or self.frame_count == 0:
             raise RuntimeError("[SETUP] Loop cache not loaded or has no frames.")
-        crops, frames, boxes, indices = [], [], [], []
+        crops, frames, transforms, indices = [], [], [], []
         for _ in range(n):
             i = self.idx % self.frame_count
             crops.append(self.face_crops[i])
             frames.append(self.full_frames[i])
-            boxes.append(self.bboxes[i])
+            transforms.append(self.transforms[i])
             indices.append(i)
             self.idx += 1
-        return crops, frames, boxes, indices
+        return crops, frames, transforms, indices
 
     def get_frame(self, index: int):
-        """Get a single frame by absolute index for pre-render use."""
         i = index % self.frame_count
-        return self.full_frames[i], self.face_crops[i], self.bboxes[i]
+        return self.full_frames[i], self.face_crops[i], self.transforms[i]
 
     @property
     def loaded(self):
