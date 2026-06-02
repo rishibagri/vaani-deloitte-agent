@@ -37,7 +37,7 @@ const prefersReducedMotion =
    Holographic head — loads the GLB, applies a translucent cyan/fresnel shader,
    bobs gently, reacts to state color, and lip-syncs from live audio level.
 ─────────────────────────────────────────────────────────────────────────── */
-function HoloHead({ appState, getLevel, url }) {
+function HoloHead({ appState, getLevel, url, glowRef }) {
   const { scene } = useGLTF(url)
   const groupRef = useRef()
   const { camera } = useThree()
@@ -46,9 +46,17 @@ function HoloHead({ appState, getLevel, url }) {
   const targetColor = useRef(new THREE.Color(stateColorHex(appState)))
   const currentColor = useRef(new THREE.Color(stateColorHex(appState)))
   const mouthRef = useRef(0)
+  const levelRef = useRef(0)       // smoothed voice energy
+  const flickerRef = useRef(0)     // one-shot materialize flicker (1 → 0)
+  const prevState = useRef(appState)
 
   useEffect(() => {
     targetColor.current.set(stateColorHex(appState))
+    // Fire a one-shot "materialize" flicker when Vaani starts speaking.
+    if (appState === 'speaking' && prevState.current !== 'speaking' && !prefersReducedMotion) {
+      flickerRef.current = 1
+    }
+    prevState.current = appState
   }, [appState])
 
   // Collect morph-target meshes (RPM head/teeth) for lip-sync.
@@ -79,12 +87,16 @@ function HoloHead({ appState, getLevel, url }) {
     // Fresnel rim glow via onBeforeCompile.
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uRimColor = { value: new THREE.Color(stateColorHex(appState)) }
+      shader.uniforms.uLevel = { value: 0 }   // live voice energy 0..1
+      shader.uniforms.uTime  = { value: 0 }
       mat.userData.shader = shader
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
           `#include <common>
            uniform vec3 uRimColor;
+           uniform float uLevel;
+           uniform float uTime;
            varying vec3 vWorldNormalR;
            varying vec3 vWorldPosR;`
         )
@@ -93,9 +105,11 @@ function HoloHead({ appState, getLevel, url }) {
           `#include <emissivemap_fragment>
            vec3 viewDirR = normalize(cameraPosition - vWorldPosR);
            float fresnel = pow(1.0 - clamp(dot(viewDirR, normalize(vWorldNormalR)), 0.0, 1.0), 2.5);
-           totalEmissiveRadiance += uRimColor * fresnel * 2.2;
-           // subtle horizontal scanlines for a hologram feel
-           float scan = 0.92 + 0.08 * sin(vWorldPosR.y * 140.0);
+           // Rim glow surges with the voice — the head "channels energy" as it speaks.
+           float rimBoost = 2.2 + uLevel * 4.0;
+           totalEmissiveRadiance += uRimColor * fresnel * rimBoost;
+           // Holographic scanlines that drift upward and intensify with the voice.
+           float scan = (0.90 - uLevel * 0.06) + (0.10 + uLevel * 0.10) * sin(vWorldPosR.y * 140.0 - uTime * 2.5);
            totalEmissiveRadiance *= scan;`
         )
       shader.vertexShader = shader.vertexShader
@@ -162,20 +176,53 @@ function HoloHead({ appState, getLevel, url }) {
     currentColor.current.lerp(targetColor.current, Math.min(1, delta * 4))
     holoMaterial.color.copy(currentColor.current)
     holoMaterial.emissive.copy(currentColor.current)
+
+    // Live voice energy (only meaningful while speaking), smoothed.
+    const rawLevel = (appState === 'speaking' && getLevel)
+      ? THREE.MathUtils.clamp(getLevel() * 3.0, 0, 1) : 0
+    levelRef.current += (rawLevel - levelRef.current) * Math.min(1, delta * 10)
+    const level = levelRef.current
+
+    // Decay the one-shot materialize flicker (~0.45s) into a rapid flutter.
+    flickerRef.current = Math.max(0, flickerRef.current - delta * 2.2)
+    const flick = flickerRef.current > 0
+      ? 1 - flickerRef.current * (0.45 + 0.45 * Math.sin(t * 55))
+      : 1
+
+    // Reduced motion: keep state color + gentle lip-sync, but suppress the
+    // voice-driven surge, scanline drift, and flicker (continuous WebGL motion
+    // the global CSS reduced-motion rule can't reach).
+    const effLevel = prefersReducedMotion ? 0 : level
+
     const shader = holoMaterial.userData.shader
-    if (shader && shader.uniforms.uRimColor) {
-      shader.uniforms.uRimColor.value.copy(currentColor.current)
+    if (shader) {
+      if (shader.uniforms.uRimColor) shader.uniforms.uRimColor.value.copy(currentColor.current)
+      if (shader.uniforms.uLevel) shader.uniforms.uLevel.value = effLevel
+      if (shader.uniforms.uTime) shader.uniforms.uTime.value = prefersReducedMotion ? 0 : t
     }
-    // Speaking pulses a little brighter.
-    const baseEmissive = appState === 'speaking' ? 0.85 : appState === 'idle' ? 0.4 : 0.6
+
+    // Emissive: calm at idle, surges with the voice while speaking; flicker on entry.
+    const baseEmissive = appState === 'speaking' ? 0.85 + effLevel * 1.3
+      : appState === 'idle' ? 0.4 : 0.6
     holoMaterial.emissiveIntensity +=
-      (baseEmissive - holoMaterial.emissiveIntensity) * Math.min(1, delta * 5)
+      (baseEmissive - holoMaterial.emissiveIntensity) * Math.min(1, delta * 6)
+    holoMaterial.emissiveIntensity *= flick
+    // Holographic flutter also dips opacity slightly during materialize.
+    holoMaterial.opacity = 0.85 * (0.6 + 0.4 * flick)
+
+    // Audio-reactive bloom halo behind the head (driven from the frame loop).
+    if (glowRef && glowRef.current) {
+      const halo = 0.6 + effLevel * 0.9 + (1 - flick) * 0.6
+      glowRef.current.style.opacity = String(Math.min(1.4, halo))
+      if (!prefersReducedMotion) {
+        glowRef.current.style.transform = `scale(${1 + effLevel * 0.18})`
+      }
+    }
 
     // Lip-sync: drive mouth from live audio loudness when speaking.
     let target = 0
     if (appState === 'speaking' && getLevel) {
-      const level = getLevel() // 0..~0.4 typical
-      target = THREE.MathUtils.clamp(level * 3.2, 0, 1)
+      target = THREE.MathUtils.clamp(level, 0, 1)
     }
     // Smooth the mouth open value (fast attack-ish).
     mouthRef.current += (target - mouthRef.current) * Math.min(1, delta * 18)
@@ -253,7 +300,7 @@ function FallbackOrb({ appState, getLevel }) {
   )
 }
 
-function SceneContents({ appState, getLevel, url }) {
+function SceneContents({ appState, getLevel, url, glowRef }) {
   return (
     <>
       <ambientLight intensity={0.6} />
@@ -261,7 +308,7 @@ function SceneContents({ appState, getLevel, url }) {
       <pointLight position={[-2, -1, 2]} intensity={0.5} color={stateColorHex(appState)} />
       <ErrorCatcher fallback={<FallbackOrb appState={appState} getLevel={getLevel} />}>
         <Suspense fallback={null}>
-          <HoloHead appState={appState} getLevel={getLevel} url={url} />
+          <HoloHead appState={appState} getLevel={getLevel} url={url} glowRef={glowRef} />
         </Suspense>
       </ErrorCatcher>
     </>
@@ -290,6 +337,7 @@ class ErrorCatcher extends Component {
 export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
   const url = avatarUrl || DEFAULT_GLB
   const [glow, setGlow] = useState(glowRgba(appState))
+  const glowRef = useRef(null)
 
   useEffect(() => { setGlow(glowRgba(appState)) }, [appState])
 
@@ -305,8 +353,10 @@ export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
         animation: 'avatar-reveal 700ms var(--ease-out-expo) 200ms both',
       }}
     >
-      {/* Soft radial CSS glow behind the head (bloom-lite). */}
+      {/* Soft radial CSS glow behind the head (bloom-lite). Color follows state;
+          opacity + scale are driven by the live voice energy from the frame loop. */}
       <div
+        ref={glowRef}
         aria-hidden="true"
         style={{
           position: 'absolute',
@@ -314,6 +364,7 @@ export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
           background: `radial-gradient(ellipse 60% 65% at 50% 42%, ${glow} 0%, transparent 70%)`,
           transition: 'background 800ms var(--ease-standard)',
           pointerEvents: 'none',
+          willChange: 'opacity, transform',
           zIndex: 0,
         }}
       />
@@ -329,7 +380,7 @@ export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
           background: 'transparent',
         }}
       >
-        <SceneContents appState={appState} getLevel={getLevel} url={url} />
+        <SceneContents appState={appState} getLevel={getLevel} url={url} glowRef={glowRef} />
       </Canvas>
     </div>
   )
