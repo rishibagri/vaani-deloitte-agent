@@ -47,7 +47,7 @@ export function ToastContainer() {
           boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          animation: 'toast-enter 200ms var(--ease-out-quart)',
+          animation: 'toast-in 200ms var(--ease-out-quart)',
           maxWidth: 340,
           textAlign: 'center',
           whiteSpace: 'pre-wrap',

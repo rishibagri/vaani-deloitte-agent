@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { ToastContainer, toast } from './ToastContainer'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -278,9 +279,8 @@ function ModelSection({ draft, onChange, token }) {
 
       drawWaveform()
     } catch (e) {
-      console.error(e)
       setLoadingAudio(false)
-      alert("Error playing voice preview. Ensure GEMINI_API_KEY is configured.")
+      toast('Voice preview failed. Check that GEMINI_API_KEY is configured.', 'error')
     }
   }
 
@@ -1006,6 +1006,8 @@ function UserMemoryLibrary({ token, onLogout }) {
 
   // Transcript viewer states
   const [selectedSessionForTranscript, setSelectedSessionForTranscript] = useState(null)
+  const [userToDelete, setUserToDelete] = useState(null)
+  const [deletingUser, setDeletingUser] = useState(false)
 
   const videoElementRef = useRef(null)
   const streamRef = useRef(null)
@@ -1030,8 +1032,7 @@ function UserMemoryLibrary({ token, onLogout }) {
       setFaceValidState('idle')
       setPhotoData(null)
     } catch (err) {
-      console.error("Camera access failed", err)
-      alert("Could not access camera. Please check camera permissions.")
+      toast('Could not access camera. Check browser camera permissions.', 'error')
     }
   }
 
@@ -1113,27 +1114,33 @@ function UserMemoryLibrary({ token, onLogout }) {
 
   useEffect(() => { loadData() }, [loadData])
 
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Are you sure you want to delete this user? All their session histories will be deleted as well.")) return
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return
+    setDeletingUser(true)
     try {
-      const res = await fetch(`${BACKEND_URL}/admin/users/${userId}`, {
+      const res = await fetch(`${BACKEND_URL}/admin/users/${userToDelete.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.ok) {
-        setUsers(prev => prev.filter(u => u.id !== userId))
-        if (selectedUser?.id === userId) setSelectedUser(null)
+        setUsers(prev => prev.filter(u => u.id !== userToDelete.id))
+        if (selectedUser?.id === userToDelete.id) setSelectedUser(null)
+        toast(`Deleted ${userToDelete.name}.`)
+      } else {
+        toast('Failed to delete user.', 'error')
       }
     } catch (e) {
-      console.error(e)
+      toast('Failed to delete user.', 'error')
     }
+    setDeletingUser(false)
+    setUserToDelete(null)
   }
 
   const handleAddUser = async (e) => {
     e.preventDefault()
     if (!newUserName.trim()) return
     if (enrollMode === 'webcam' && faceValidState !== 'valid') {
-      alert("Please capture and verify a valid face before registering.")
+      toast('Capture and verify a face before registering.', 'error')
       return
     }
     setAddingUser(true)
@@ -1157,12 +1164,11 @@ function UserMemoryLibrary({ token, onLogout }) {
         setNewUserCompany('default')
         setEnrollMode('profile')
       } else {
-        const errData = await res.json()
-        alert(errData.detail || "Failed to create user")
+        const errData = await res.json().catch(() => ({}))
+        toast(errData.detail || 'Failed to create user.', 'error')
       }
     } catch (e) {
-      console.error(e)
-      alert("Error adding user.")
+      toast('Error adding user.', 'error')
     }
     setAddingUser(false)
   }
@@ -1354,7 +1360,7 @@ function UserMemoryLibrary({ token, onLogout }) {
                       }}>
                         History
                       </button>
-                      <button onClick={() => handleDeleteUser(user.id)} style={{
+                      <button onClick={() => setUserToDelete(user)} style={{
                         padding: '5px 11px', background: 'none', border: '1px solid rgba(255,68,68,0.3)',
                         borderRadius: 'var(--radius-sm)', color: 'var(--error)', cursor: 'pointer', fontSize: 12
                       }}>
@@ -1733,7 +1739,7 @@ function UserMemoryLibrary({ token, onLogout }) {
                 onClick={() => {
                   if (selectedSessionForTranscript.transcript) {
                     navigator.clipboard.writeText(selectedSessionForTranscript.transcript)
-                    alert("Session transcript copied to clipboard!")
+                    toast('Transcript copied to clipboard.')
                   }
                 }}
                 disabled={!selectedSessionForTranscript.transcript}
@@ -1758,6 +1764,45 @@ function UserMemoryLibrary({ token, onLogout }) {
         </div>
       )}
       
+      {/* Delete user confirmation */}
+      {userToDelete && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 300,
+          background: 'rgba(1,10,26,0.82)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => !deletingUser && setUserToDelete(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--bg-surface-1)', border: '1px solid rgba(255,68,68,0.25)',
+            borderRadius: 'var(--radius-lg)', padding: '24px', width: 360,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+          }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 10 }}>
+              Delete {userToDelete.name}?
+            </div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.5 }}>
+              This permanently removes their face profile and all conversation history. This cannot be undone.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setUserToDelete(null)} disabled={deletingUser} style={{
+                padding: '8px 16px', background: 'none', border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)',
+                fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: 'pointer',
+              }}>
+                Cancel
+              </button>
+              <button onClick={confirmDeleteUser} disabled={deletingUser} style={{
+                padding: '8px 16px', background: 'var(--error)', border: 'none',
+                borderRadius: 'var(--radius-md)', color: '#fff',
+                fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13,
+                cursor: deletingUser ? 'default' : 'pointer', opacity: deletingUser ? 0.6 : 1,
+              }}>
+                {deletingUser ? 'Deleting...' : 'Delete user'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .hover-row:hover {
           background: rgba(134,188,37,0.02) !important;
@@ -1872,6 +1917,8 @@ export function AdminDashboard({ token, onLogout }) {
           <BotEditor bot={editBot} token={token} onBack={handleBack} onActivated={handleActivated} />
         )}
       </div>
+
+      <ToastContainer />
     </div>
   )
 }

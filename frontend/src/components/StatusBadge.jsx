@@ -58,14 +58,18 @@ export function StatusBadge({ appState, connected }) {
           transition: `background 400ms var(--ease-standard)`,
         }}
       />
-      <span style={{
-        fontFamily: "'Inter', sans-serif",
-        fontSize: 12,
-        fontWeight: 500,
-        letterSpacing: '0.01em',
-        color: cfg.color,
-        transition: `color 400ms var(--ease-standard)`,
-      }}>
+      <span
+        key={key}
+        style={{
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 12,
+          fontWeight: 500,
+          letterSpacing: '0.01em',
+          color: cfg.color,
+          transition: `color 400ms var(--ease-standard)`,
+          animation: 'hud-reveal 320ms var(--ease-out-quart) both',
+        }}
+      >
         {cfg.label}
       </span>
     </div>

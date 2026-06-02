@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 
 const W         = 460   // total container width (ring decorations use this)
 const VID_W     = 380   // video display width
@@ -150,6 +150,16 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
     if (fadeTimer.current) clearTimeout(fadeTimer.current)
   }, [])
 
+  // One-shot burst on every state change — announces the transition decisively.
+  const [burstKey, setBurstKey] = useState(0)
+  const prevState = useRef(appState)
+  useEffect(() => {
+    if (appState !== prevState.current) {
+      prevState.current = appState
+      setBurstKey(k => k + 1)
+    }
+  }, [appState])
+
   const isSpeakingOrListening = appState === 'speaking' || appState === 'listening'
   const ringDelays   = appState === 'speaking' ? RING_DELAYS_SPEAKING : RING_DELAYS_LISTENING
   const ringDuration = appState === 'speaking' ? 2200 : 3000
@@ -268,6 +278,25 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
           }}
         />
       ))}
+
+      {/* ── State-change burst — one decisive ring per transition ── */}
+      <div
+        key={burstKey}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          top: RING_CY - VID_W / 2,
+          left: VID_LEFT,
+          width: VID_W,
+          height: VID_W,
+          borderRadius: '50%',
+          border: `2px solid ${color}`,
+          animation: burstKey > 0 ? 'state-burst 620ms var(--ease-out-expo) both' : 'none',
+          willChange: 'transform, opacity',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }}
+      />
 
       {/* ── Thinking spinner ── */}
       {appState === 'thinking' && (

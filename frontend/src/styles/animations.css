@@ -63,6 +63,15 @@
   to   { transform: scale(1.5); opacity: 0;    }
 }
 
+/* ── State-change burst — fires once when the conversation state flips.
+   A single decisive ring that announces "the state just changed", distinct
+   from the continuous listening/speaking pulses. ── */
+
+@keyframes state-burst {
+  from { transform: scale(0.92); opacity: 0.7; }
+  to   { transform: scale(1.7);  opacity: 0;   }
+}
+
 /* ── Thinking ────────────────────────────────── */
 
 @keyframes thinking-spin {

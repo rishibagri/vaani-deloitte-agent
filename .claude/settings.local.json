@@ -20,7 +20,10 @@
       "Bash(git checkout *)",
       "Bash(grep -E '\\\\.\\(sh|bat|cmd|ps1|txt|toml|cfg|ini|yml|yaml|json|md\\)$')",
       "Bash(xargs ls -la)",
-      "Bash(python -m py_compile backend/musetalk_wrapper.py backend/loop_cache.py backend/pipeline.py backend/main.py backend/config.py)"
+      "Bash(python -m py_compile backend/musetalk_wrapper.py backend/loop_cache.py backend/pipeline.py backend/main.py backend/config.py)",
+      "Bash(timeout 120 npx vite build --logLevel error)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx vite *)"
     ]
   }
 }

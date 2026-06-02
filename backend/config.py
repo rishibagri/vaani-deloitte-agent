@@ -72,7 +72,7 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", f"http://localhost:{FRONTEND_PORT}").sp
 DATABASE_URL   = os.getenv("DATABASE_URL", "")
 MEMORY_ENABLED = bool(DATABASE_URL)
 
-GEMINI_TEXT_MODEL = "gemini-2.0-flash"
+GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
 
 
 def detect_musetalk_capable() -> bool:

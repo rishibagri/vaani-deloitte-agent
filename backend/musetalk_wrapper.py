@@ -191,11 +191,12 @@ class MuseTalkModel:
 
         # Run the Whisper encoder on each 30s mel segment, stack hidden states.
         whisper_feature = []
-        for input_feature in feats:
-            input_feature = input_feature.to(self.device).to(self.weight_dtype)
-            hidden = self.whisper.encoder(input_feature, output_hidden_states=True).hidden_states
-            hidden = torch.stack(hidden, dim=2)  # [1, seq, layers, 384]
-            whisper_feature.append(hidden)
+        with torch.no_grad():
+            for input_feature in feats:
+                input_feature = input_feature.to(self.device).to(self.weight_dtype)
+                hidden = self.whisper.encoder(input_feature, output_hidden_states=True).hidden_states
+                hidden = torch.stack(hidden, dim=2)  # [1, seq, layers, 384]
+                whisper_feature.append(hidden)
         whisper_feature = torch.cat(whisper_feature, dim=1)
 
         # Pad generously so every per-frame slice stays in bounds.
@@ -262,7 +263,7 @@ class MuseTalkModel:
             # ── 1. Compute an audio key per frame (mean-pooled, L2-normalized) ──
             keys = []
             for i in range(n_frames):
-                k = whisper_chunks[i].float().mean(dim=0).cpu().numpy()  # [384]
+                k = whisper_chunks[i].detach().float().mean(dim=0).cpu().numpy()  # [384]
                 nrm = np.linalg.norm(k) or 1e-8
                 keys.append((k / nrm).astype(np.float32))
 

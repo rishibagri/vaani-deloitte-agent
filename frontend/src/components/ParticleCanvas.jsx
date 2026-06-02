@@ -9,6 +9,16 @@ const HEX_SVG = encodeURIComponent(
 )
 const HEX_BG = `url("data:image/svg+xml,${HEX_SVG}")`
 
+/* Ambient wash color per conversation state — the room breathes with Vaani.
+   Kept low-alpha so it frames the avatar without competing with it. */
+const STATE_GLOW = {
+  idle:      'rgba(1,33,105,0.0)',
+  listening: 'rgba(134,188,37,0.16)',
+  thinking:  'rgba(245,166,35,0.14)',
+  speaking:  'rgba(0,163,224,0.18)',
+  error:     'rgba(255,68,68,0.12)',
+}
+
 function CornerBracket({ corner }) {
   const base = { position: 'fixed', width: 40, height: 40, pointerEvents: 'none', zIndex: 2 }
   const style = {
@@ -35,6 +45,32 @@ export function ParticleCanvas({ appState }) {
           zIndex: 'var(--z-bg)',
           pointerEvents: 'none',
           background: 'radial-gradient(ellipse 120% 80% at 50% 0%, #012169 0%, #010A1A 100%)',
+        }}
+      />
+
+      {/* State-reactive ambient wash — centered behind the avatar, shifts color
+          with the conversation state and fades back to nothing when idle. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 'var(--z-bg)',
+          pointerEvents: 'none',
+          background: `radial-gradient(ellipse 70% 60% at 50% 44%, ${STATE_GLOW[appState] || STATE_GLOW.idle} 0%, transparent 70%)`,
+          transition: 'background 900ms var(--ease-standard)',
+        }}
+      />
+
+      {/* Focus vignette — darkens the edges so attention falls on the avatar. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 'var(--z-particles)',
+          pointerEvents: 'none',
+          background: 'radial-gradient(ellipse 75% 70% at 50% 46%, transparent 55%, rgba(1,5,14,0.55) 100%)',
         }}
       />
 

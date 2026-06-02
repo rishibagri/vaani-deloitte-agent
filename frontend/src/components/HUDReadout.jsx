@@ -96,8 +96,6 @@ export function HUDReadout({
         ...offsets,
         minWidth: 110,
         textAlign: position.includes('right') ? 'right' : 'left',
-        /* Hide on mobile */
-        '@media (max-width: 768px)': { display: 'none' },
       }}
     >
       {position === 'top-left' && (

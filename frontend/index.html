@@ -11,13 +11,32 @@
   <link rel="stylesheet" href="/src/styles/animations.css" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { color-scheme: dark; }
     body {
       background: var(--bg-base);
       color: var(--text-primary);
       font-family: 'Inter', system-ui, sans-serif;
       min-height: 100vh;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      -webkit-tap-highlight-color: transparent;
     }
+    ::selection { background: rgba(134,188,37,0.30); color: #F2F6FC; }
+    /* App-wide keyboard focus ring. Components that set inline outline:none
+       (the main avatar interface) keep their bespoke focus treatment. */
+    button:focus-visible, [role="button"]:focus-visible, a:focus-visible,
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid rgba(0,163,224,0.65);
+      outline-offset: 2px;
+    }
+    /* Slim, on-brand scrollbars for the few scrollable panels (language list, etc.) */
+    * { scrollbar-width: thin; scrollbar-color: rgba(139,163,199,0.35) transparent; }
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-thumb { background: rgba(139,163,199,0.30); border-radius: 9999px; }
+    *::-webkit-scrollbar-thumb:hover { background: rgba(139,163,199,0.50); }
+    *::-webkit-scrollbar-track { background: transparent; }
   </style>
 </head>
 <body>
