@@ -311,7 +311,6 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
           willChange: 'box-shadow, transform',
         }}
       >
-        {/* Video hidden until avatar asset is confirmed */}
         <video
           ref={videoRef}
           src="/avatar_idle.mp4"
@@ -320,7 +319,12 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
           muted
           playsInline
           aria-hidden="true"
-          style={{ display: 'none' }}
+          style={{
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
         />
       </div>
 
