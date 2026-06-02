@@ -62,6 +62,7 @@ class LoopCache:
             print("[SETUP] Trying OpenCV face detection fallback...")
             try:
                 coords = self._detect_faces_opencv(raw_frames)
+                coords = self._stabilize_boxes(coords, raw_frames[0].shape[1], raw_frames[0].shape[0])
                 frame_list = raw_frames
                 self.full_frames = frame_list
                 self.bboxes = coords
@@ -124,6 +125,36 @@ class LoopCache:
                 last = box
             coords.append(box)
         return coords
+
+    def _stabilize_boxes(self, coords: list, w_img: int, h_img: int) -> list:
+        """
+        Lock every box to the median width/height so the mouth never scales
+        frame-to-frame; keep each box's center so it still tracks the moving head.
+        """
+        valid = [c for c in coords if c is not None]
+        if not valid:
+            return coords
+        widths  = sorted(c[2] - c[0] for c in valid)
+        heights = sorted(c[3] - c[1] for c in valid)
+        mw = widths[len(widths) // 2]
+        mh = heights[len(heights) // 2]
+
+        out = []
+        last = None
+        for c in coords:
+            if c is None:
+                out.append(last)
+                continue
+            cx = (c[0] + c[2]) // 2
+            cy = (c[1] + c[3]) // 2
+            x1 = max(0, cx - mw // 2)
+            y1 = max(0, cy - mh // 2)
+            x2 = min(w_img, x1 + mw)
+            y2 = min(h_img, y1 + mh)
+            box = (x1, y1, x2, y2)
+            out.append(box)
+            last = box
+        return out
 
     @staticmethod
     def _pad_box(x, y, w, h, w_img, h_img, pad_ratio=0.25):

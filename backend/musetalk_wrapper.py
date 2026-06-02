@@ -42,6 +42,7 @@ class MuseTalkModel:
         self.whisper         = None  # transformers WhisperModel
         self.audio_processor = None  # AudioProcessor
         self._latent_cache   = None  # precomputed 8-ch latents per loop frame
+        self._mouth_alpha    = None  # feathered mouth-region blend mask
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -83,6 +84,10 @@ class MuseTalkModel:
             self.whisper = WhisperModel.from_pretrained(whisper_dir)
             self.whisper = self.whisper.to(device=self.device, dtype=self.weight_dtype).eval()
 
+            # Mouth-region alpha mask (256x256): keep the original upper face,
+            # blend only the lower (mouth/jaw) region with a soft feathered seam.
+            self._mouth_alpha = self._build_mouth_alpha(256)
+
             self._loaded = True
             print("[MUSETALK] All V1.5 models loaded and ready")
 
@@ -94,6 +99,32 @@ class MuseTalkModel:
             self._loaded = False
         finally:
             os.chdir(_old_cwd)
+
+    @staticmethod
+    def _build_mouth_alpha(size: int) -> np.ndarray:
+        """
+        Build a [size,size] float32 alpha mask: 0 in the upper face (keep original),
+        ramping to 1 over the mouth/jaw region, with the left/right edges feathered
+        so the composite has no visible seam.
+        """
+        alpha = np.zeros((size, size), dtype=np.float32)
+        top  = int(size * 0.46)   # above: fully original
+        full = int(size * 0.62)   # below: fully generated mouth
+        for y in range(size):
+            if y <= top:
+                a = 0.0
+            elif y >= full:
+                a = 1.0
+            else:
+                a = (y - top) / float(full - top)
+            alpha[y, :] = a
+        # Horizontal edge feather (taper left/right 12%)
+        edge = int(size * 0.12)
+        if edge > 0:
+            ramp = np.linspace(0.0, 1.0, edge, dtype=np.float32)
+            alpha[:, :edge]  *= ramp[None, :]
+            alpha[:, -edge:] *= ramp[::-1][None, :]
+        return alpha
 
     def prepare_latents(self, face_crops: list):
         """
@@ -247,7 +278,16 @@ class MuseTalkModel:
                             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                             face_h, face_w = y2 - y1, x2 - x1
                             if face_h > 0 and face_w > 0:
-                                result_frame[y1:y2, x1:x2] = cv2.resize(generated_bgr, (face_w, face_h))
+                                gen = cv2.resize(generated_bgr, (face_w, face_h)).astype(np.float32)
+                                roi = result_frame[y1:y2, x1:x2].astype(np.float32)
+                                # Mouth-only feathered blend: keep original face,
+                                # swap only the lower mouth/jaw region.
+                                if self._mouth_alpha is not None:
+                                    a = cv2.resize(self._mouth_alpha, (face_w, face_h))[:, :, None]
+                                    blended = roi * (1.0 - a) + gen * a
+                                else:
+                                    blended = gen
+                                result_frame[y1:y2, x1:x2] = blended.astype(np.uint8)
 
                         result_frames.append(cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB))
 
