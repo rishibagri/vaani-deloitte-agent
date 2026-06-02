@@ -28,6 +28,8 @@ class MuseTalkModel:
         self.vae             = None
         self.unet            = None  # MuseTalk UNet wrapper; real model at self.unet.model
         self.audio_processor = None
+        self.scaling_factor  = 0.18215
+        self._mask_tensor    = None
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -56,6 +58,13 @@ class MuseTalkModel:
             self.vae = self.vae.to(self.device)
             self.vae.requires_grad_(False)
             self.vae.eval()
+            self.scaling_factor = self.vae.config.scaling_factor  # 0.18215 for sd-vae-ft-mse
+
+            # Lower-half mask: keep upper half (eyes/nose), zero mouth/chin.
+            # MuseTalk learns to regenerate the masked mouth region from audio.
+            mask = torch.zeros((256, 256), dtype=torch.float32)
+            mask[:128, :] = 1.0
+            self._mask_tensor = mask.unsqueeze(0).to(self.device)  # [1, 256, 256]
 
             # MuseTalk UNet V1.5 wrapper — real nn.Module lives at self.unet.model
             # UNet also contains its own PositionalEncoding at self.unet.pe
@@ -79,6 +88,22 @@ class MuseTalkModel:
             self._loaded = False
         finally:
             os.chdir(_old_cwd)
+
+    def _img_to_tensor(self, img_bgr, half_mask: bool):
+        """
+        Match MuseTalk VAE.preprocess_img: resize 256, optional lower-half mask,
+        normalize to [-1, 1], return [1, 3, 256, 256] tensor on device.
+        """
+        import torch
+        import cv2
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        img_rgb = cv2.resize(img_rgb, (256, 256), interpolation=cv2.INTER_LANCZOS4)
+        x = img_rgb.astype(np.float32) / 255.0
+        x = torch.from_numpy(x).permute(2, 0, 1)  # [3, 256, 256]
+        if half_mask:
+            x = x * self._mask_tensor  # zero the lower half (mouth region)
+        x = (x - 0.5) / 0.5            # normalize to [-1, 1]
+        return x.unsqueeze(0).to(self.device)
 
     def _infer_sync(self, audio_bytes_16k: bytes, face_crops: list,
                     full_frames: list, bboxes: list) -> list:
@@ -117,36 +142,40 @@ class MuseTalkModel:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
             result_frames = []
+            sf = self.scaling_factor
 
             with torch.no_grad():
                 for i in range(n_frames):
-                    face_bgr   = face_crops[i]
+                    face_bgr   = face_crops[i]   # 256x256 BGR
                     full_frame = full_frames[i]
                     bbox       = bboxes[i]
                     audio_emb  = audio_chunks[i]
 
-                    # Encode face to VAE latent
-                    face_rgb    = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
-                    face_tensor = torch.from_numpy(face_rgb).permute(2, 0, 1).float()
-                    face_tensor = (face_tensor / 127.5 - 1.0).unsqueeze(0).to(self.device)
-                    latent      = self.vae.encode(face_tensor).latent_dist.sample() * 0.18215
+                    # Build 8-channel UNet input: [masked_latent | ref_latent]
+                    # ref = full face; masked = lower half (mouth) zeroed out.
+                    ref_tensor    = self._img_to_tensor(face_bgr, half_mask=False)
+                    masked_tensor = self._img_to_tensor(face_bgr, half_mask=True)
+                    ref_latents    = self.vae.encode(ref_tensor).latent_dist.sample() * sf
+                    masked_latents = self.vae.encode(masked_tensor).latent_dist.sample() * sf
+                    latent_input   = torch.cat([masked_latents, ref_latents], dim=1)  # [1,8,32,32]
 
                     # Audio embedding + positional encoding (via UNet's built-in PE)
                     audio_t = torch.from_numpy(audio_emb).float().unsqueeze(0).to(self.device)
                     audio_t = self.unet.pe(audio_t)
                     ts      = torch.zeros(1, dtype=torch.long).to(self.device)
 
-                    # UNet forward pass — call .model directly, UNet wrapper is not callable
-                    output_latent = self.unet.model(latent, ts, encoder_hidden_states=audio_t).sample
-                    output_latent = output_latent / 0.18215
+                    # UNet forward — outputs 4-channel latent
+                    pred_latents = self.unet.model(
+                        latent_input, ts, encoder_hidden_states=audio_t
+                    ).sample
 
-                    # Decode latent back to pixel space
-                    decoded = self.vae.decode(output_latent).sample
-                    decoded = ((decoded + 1.0) * 127.5).squeeze(0).permute(1, 2, 0).clamp(0, 255)
-                    generated_bgr = cv2.cvtColor(
-                        decoded.cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR
-                    )
-                    generated_bgr = cv2.resize(generated_bgr, (256, 256))
+                    # Decode latent back to pixel space (MuseTalk decode_latents)
+                    pred_latents = (1.0 / sf) * pred_latents
+                    decoded = self.vae.decode(pred_latents).sample
+                    decoded = (decoded / 2 + 0.5).clamp(0, 1)
+                    decoded = decoded.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                    generated_rgb = (decoded * 255).round().astype(np.uint8)
+                    generated_bgr = cv2.cvtColor(generated_rgb, cv2.COLOR_RGB2BGR)
 
                     # Paste generated face back into the full frame at the face bbox
                     result_frame = full_frame.copy()

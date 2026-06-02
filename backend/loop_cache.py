@@ -57,23 +57,8 @@ class LoopCache:
         _add_musetalk_to_path()
 
         try:
-            import os
-            from musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs
-            _old_cwd = os.getcwd()
-            os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
-            try:
-                coords, frame_list = get_landmark_and_bbox(raw_frames, bbox_shift=0)
-            finally:
-                os.chdir(_old_cwd)
-            # If DWPose returned no valid coords, fall through to OpenCV
-            if not coords or all(c is None for c in coords):
-                raise ValueError("DWPose returned no face coords")
-            self.full_frames = frame_list
-            self.bboxes = coords
-            self.face_crops = self._crop_faces(frame_list, coords)
-            print(f"[SETUP] Face detection complete. {len(self.face_crops)} crops cached.")
+            raise NotImplementedError("DWPose skipped — using OpenCV directly")
         except Exception as e:
-            print(f"[SETUP] DWPose face detection failed: {e}")
             print("[SETUP] Trying OpenCV face detection fallback...")
             try:
                 coords = self._detect_faces_opencv(raw_frames)

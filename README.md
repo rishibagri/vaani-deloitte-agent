@@ -199,9 +199,19 @@ DATABASE_URL=postgresql://rishii3@localhost:5432/vaani
 
 The schema is created automatically on first connection. To install the face recognition library:
 
+**Windows** — run the installer script (uses precompiled `dlib-bin`, no Visual C++ build needed):
+
+```
+scripts\install_face_recognition.bat
+```
+
+**Mac / Linux** — dlib compiles cleanly with a working toolchain:
+
 ```bash
 pip install cmake dlib face_recognition
 ```
+
+> On Windows, building real `dlib` from source needs Visual C++ Build Tools and usually fails. The script installs `dlib-bin` (a precompiled drop-in) and `face_recognition` with `--no-deps` to avoid triggering a source build.
 
 ---
 
