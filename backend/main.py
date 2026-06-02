@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
     if MUSETALK_ENABLED:
         musetalk.load()
         loop_cache.load()
+        # Precompute face latents once so inference skips per-frame VAE encoding
+        if musetalk.loaded and loop_cache.loaded:
+            musetalk.prepare_latents(loop_cache.face_crops)
     else:
         print("[SETUP] MuseTalk disabled. Avatar will show loop video only.")
 

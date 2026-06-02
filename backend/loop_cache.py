@@ -120,14 +120,15 @@ class LoopCache:
     def next_batch(self, n: int):
         if not self._loaded or self.frame_count == 0:
             raise RuntimeError("[SETUP] Loop cache not loaded or has no frames.")
-        crops, frames, boxes = [], [], []
+        crops, frames, boxes, indices = [], [], [], []
         for _ in range(n):
             i = self.idx % self.frame_count
             crops.append(self.face_crops[i])
             frames.append(self.full_frames[i])
             boxes.append(self.bboxes[i])
+            indices.append(i)
             self.idx += 1
-        return crops, frames, boxes
+        return crops, frames, boxes, indices
 
     def get_frame(self, index: int):
         """Get a single frame by absolute index for pre-render use."""

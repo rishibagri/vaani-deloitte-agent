@@ -41,6 +41,7 @@ class MuseTalkModel:
         self.pe              = None  # PositionalEncoding
         self.whisper         = None  # transformers WhisperModel
         self.audio_processor = None  # AudioProcessor
+        self._latent_cache   = None  # precomputed 8-ch latents per loop frame
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -94,6 +95,33 @@ class MuseTalkModel:
         finally:
             os.chdir(_old_cwd)
 
+    def prepare_latents(self, face_crops: list):
+        """
+        Precompute the 8-channel [masked | ref] VAE latents for every loop-video
+        face crop ONCE at startup. The avatar's face never changes, so doing this
+        per-frame at inference was the biggest waste — this removes two VAE encodes
+        per frame from the hot path.
+        """
+        if not self._loaded or not face_crops:
+            return
+        import torch
+        _old_cwd = os.getcwd()
+        os.chdir(str(MUSETALK_DIR))
+        try:
+            cache = []
+            with torch.no_grad():
+                for crop in face_crops:
+                    lat = self.vae.get_latents_for_unet(crop)
+                    lat = lat.to(device=self.device, dtype=self.weight_dtype)
+                    cache.append(lat)
+            self._latent_cache = cache
+            print(f"[MUSETALK] Precomputed {len(cache)} face latents")
+        except Exception as e:
+            print(f"[MUSETALK] Latent precompute failed: {e}")
+            self._latent_cache = None
+        finally:
+            os.chdir(_old_cwd)
+
     def _whisper_chunks_safe(self, feats, num_frames: int):
         """
         Reimplementation of AudioProcessor.get_whisper_chunk with bounds clamping
@@ -141,7 +169,7 @@ class MuseTalkModel:
         return chunks
 
     def _infer_sync(self, audio_bytes_16k: bytes, face_crops: list,
-                    full_frames: list, bboxes: list) -> list:
+                    full_frames: list, bboxes: list, indices: list) -> list:
         import torch
         import cv2
 
@@ -184,9 +212,13 @@ class MuseTalkModel:
                     full_frame = full_frames[i]
                     bbox       = bboxes[i]
 
-                    # 8-channel [masked | ref] latent via MuseTalk VAE wrapper
-                    latent_input = self.vae.get_latents_for_unet(face_bgr)
-                    latent_input = latent_input.to(device=self.device, dtype=self.weight_dtype)
+                    # 8-channel [masked | ref] latent — use precomputed cache if available
+                    if self._latent_cache is not None and i < len(indices):
+                        latent_input = self._latent_cache[indices[i]]
+                    else:
+                        latent_input = self.vae.get_latents_for_unet(face_bgr).to(
+                            device=self.device, dtype=self.weight_dtype
+                        )
 
                     # Per-frame audio feature [50, 384] -> [1, 50, 384] -> positional encoding
                     audio_t = whisper_chunks[i].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
@@ -225,13 +257,13 @@ class MuseTalkModel:
                     pass
 
     async def infer_batch(self, audio_bytes_16k: bytes, face_crops: list,
-                          full_frames: list, bboxes: list) -> list:
+                          full_frames: list, bboxes: list, indices: list) -> list:
         if not self._loaded:
             return []
         loop   = asyncio.get_event_loop()
         frames = await loop.run_in_executor(
             self._executor, self._infer_sync,
-            audio_bytes_16k, face_crops, full_frames, bboxes,
+            audio_bytes_16k, face_crops, full_frames, bboxes, indices,
         )
         return [encode_jpeg(f) for f in frames]
 

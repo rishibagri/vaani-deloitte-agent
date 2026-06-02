@@ -211,9 +211,9 @@ class SessionPipeline:
                     # Pull face frames proportional to audio length (25 fps, 16kHz int16).
                     n_samples = len(resampled) // 2
                     n_frames = max(1, int((n_samples / 16000) * 25))
-                    crops, frames, bboxes = self.loop_cache.next_batch(n_frames)
+                    crops, frames, bboxes, indices = self.loop_cache.next_batch(n_frames)
                     jpeg_frames = await self.musetalk.infer_batch(
-                        resampled, crops, frames, bboxes
+                        resampled, crops, frames, bboxes, indices
                     )
                     # Barge-in may have happened during inference — skip stale frames.
                     if epoch == self._turn_epoch:

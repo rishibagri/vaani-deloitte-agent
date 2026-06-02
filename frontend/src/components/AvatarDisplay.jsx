@@ -125,7 +125,16 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
         const ctx = canvas.getContext('2d')
         if (bitmapBuf.current) bitmapBuf.current.close()
         bitmapBuf.current = bitmap
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        // Draw with "cover" + top-anchored crop to match the idle <video>
+        // (objectFit: cover, objectPosition: center top), so the swapped-face
+        // frame lines up exactly with the idle video underneath (no flashing).
+        const cw = canvas.width, ch = canvas.height
+        const scale = Math.max(cw / bitmap.width, ch / bitmap.height)
+        const dw = bitmap.width * scale, dh = bitmap.height * scale
+        const dx = (cw - dw) / 2  // center horizontally
+        const dy = 0              // anchor to top
+        ctx.clearRect(0, 0, cw, ch)
+        ctx.drawImage(bitmap, dx, dy, dw, dh)
       })
     fadeTimer.current = setTimeout(() => {
       if (canvasRef.current) canvasRef.current.style.opacity = '0'
@@ -326,23 +335,25 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
         />
       </div>
 
-      {/* ── MuseTalk canvas overlay ── */}
+      {/* ── MuseTalk canvas overlay — exactly overlays the idle video box ── */}
       <canvas
         ref={canvasRef}
-        width={360}
-        height={360}
+        width={VID_W}
+        height={VID_H}
         aria-hidden="true"
         style={{
           position: 'absolute',
-          top: RING_CY - 180,
-          left: RING_CX - 180,
-          width: 360,
-          height: 360,
-          borderRadius: '50%',
+          top: 0,
+          left: VID_LEFT,
+          width: VID_W,
+          height: VID_H,
           zIndex: 5,
           opacity: 0,
+          transform: avatarScale,
           transition: 'opacity 200ms var(--ease-standard)',
           pointerEvents: 'none',
+          maskImage: 'radial-gradient(ellipse 88% 92% at 50% 46%, black 48%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 88% 92% at 50% 46%, black 48%, transparent 100%)',
         }}
       />
 
