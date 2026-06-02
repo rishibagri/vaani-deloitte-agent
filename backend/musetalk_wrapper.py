@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import sys
 import wave
@@ -93,6 +94,52 @@ class MuseTalkModel:
         finally:
             os.chdir(_old_cwd)
 
+    def _whisper_chunks_safe(self, feats, num_frames: int):
+        """
+        Reimplementation of AudioProcessor.get_whisper_chunk with bounds clamping
+        instead of assert/exit() — safe for short streaming chunks. Returns a list
+        of per-frame audio features, each shaped [50, 384].
+        """
+        import torch
+        from einops import rearrange
+
+        pad_left, pad_right = 2, 2
+        feat_len_per_frame = 2 * (pad_left + pad_right + 1)  # 10
+        fps = 25
+        idx_multiplier = 50 / fps  # audio is 50 fps, video 25 fps
+
+        # Run the Whisper encoder on each 30s mel segment, stack hidden states.
+        whisper_feature = []
+        for input_feature in feats:
+            input_feature = input_feature.to(self.device).to(self.weight_dtype)
+            hidden = self.whisper.encoder(input_feature, output_hidden_states=True).hidden_states
+            hidden = torch.stack(hidden, dim=2)  # [1, seq, layers, 384]
+            whisper_feature.append(hidden)
+        whisper_feature = torch.cat(whisper_feature, dim=1)
+
+        # Pad generously so every per-frame slice stays in bounds.
+        padding_nums = math.ceil(idx_multiplier)
+        left = padding_nums * pad_left
+        right = padding_nums * pad_right + feat_len_per_frame
+        whisper_feature = torch.cat([
+            torch.zeros_like(whisper_feature[:, :left]),
+            whisper_feature,
+            torch.zeros_like(whisper_feature[:, :right]),
+        ], dim=1)
+
+        total = whisper_feature.shape[1]
+        chunks = []
+        for fi in range(num_frames):
+            idx = int(fi * idx_multiplier)
+            if idx + feat_len_per_frame > total:
+                idx = total - feat_len_per_frame
+            if idx < 0:
+                break
+            clip = whisper_feature[:, idx: idx + feat_len_per_frame]  # [1,10,layers,384]
+            clip = rearrange(clip, 'b c h w -> b (c h) w')           # [1, 50, 384]
+            chunks.append(clip.squeeze(0))                            # [50, 384]
+        return chunks
+
     def _infer_sync(self, audio_bytes_16k: bytes, face_crops: list,
                     full_frames: list, bboxes: list) -> list:
         import torch
@@ -113,16 +160,16 @@ class MuseTalkModel:
                 wf.setframerate(16000)
                 wf.writeframes(audio_bytes_16k)
 
-            # V1.5 audio feature extraction
+            # V1.5 mel feature extraction (HF feature extractor)
             feats, librosa_length = self.audio_processor.get_audio_feature(
                 tmp_path, weight_dtype=self.weight_dtype
             )
             if feats is None or librosa_length == 0:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
-            whisper_chunks = self.audio_processor.get_whisper_chunk(
-                feats, self.device, self.weight_dtype, self.whisper, librosa_length, fps=25,
-            )
+            # Number of video frames this audio chunk should drive (25 fps).
+            num_frames = max(1, int((librosa_length / 16000) * 25))
+            whisper_chunks = self._whisper_chunks_safe(feats, num_frames)
 
             n_frames = min(len(face_crops), len(whisper_chunks))
             if n_frames == 0:
@@ -166,7 +213,7 @@ class MuseTalkModel:
 
             return result_frames
 
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             print(f"[MUSETALK] Inference error: {e}")
             return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
         finally:

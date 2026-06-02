@@ -208,7 +208,10 @@ class SessionPipeline:
                 # run lip sync if MuseTalk is loaded
                 if self.musetalk.loaded and self.loop_cache.loaded:
                     resampled = resample_24k_to_16k(audio_bytes)
-                    crops, frames, bboxes = self.loop_cache.next_batch(FRAMES_PER_BATCH)
+                    # Pull face frames proportional to audio length (25 fps, 16kHz int16).
+                    n_samples = len(resampled) // 2
+                    n_frames = max(1, int((n_samples / 16000) * 25))
+                    crops, frames, bboxes = self.loop_cache.next_batch(n_frames)
                     jpeg_frames = await self.musetalk.infer_batch(
                         resampled, crops, frames, bboxes
                     )
