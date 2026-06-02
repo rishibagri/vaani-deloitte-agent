@@ -129,7 +129,7 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
             opacity: isDisabled ? 'var(--mic-disabled-opacity)' : 1,
             transform: isRecording ? 'scale(1.10)' : 'scale(1)',
             transition: [
-              'transform 220ms var(--ease-spring)',
+              'transform 220ms var(--ease-out-quart)',
               'background var(--dur-base) var(--ease-standard)',
               'box-shadow 220ms var(--ease-standard)',
               'opacity var(--dur-fast) var(--ease-standard)',

@@ -34,6 +34,7 @@ export function Header({
   const [langOpen, setLangOpen] = useState(false)
   const dropdownRef = useRef(null)
   const triggerRef  = useRef(null)
+  const optionRefs  = useRef([])
 
   useEffect(() => {
     if (!langOpen) return
@@ -49,10 +50,40 @@ export function Header({
 
   useEffect(() => {
     if (!langOpen) return
-    const esc = (e) => { if (e.key === 'Escape') setLangOpen(false) }
+    const esc = (e) => {
+      if (e.key === 'Escape') {
+        setLangOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
     document.addEventListener('keydown', esc)
     return () => document.removeEventListener('keydown', esc)
   }, [langOpen])
+
+  /* Move focus into the open list, landing on the selected option */
+  useEffect(() => {
+    if (!langOpen) return
+    const idx = Math.max(0, LANGUAGES.findIndex(l => l.code === currentLang))
+    optionRefs.current[idx]?.focus()
+  }, [langOpen, currentLang])
+
+  const onListKeyDown = (e) => {
+    const opts = optionRefs.current.filter(Boolean)
+    const idx = opts.indexOf(document.activeElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      opts[(idx + 1) % opts.length]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      opts[(idx - 1 + opts.length) % opts.length]?.focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      opts[0]?.focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      opts[opts.length - 1]?.focus()
+    }
+  }
 
   const dotColor = { connected: '#86BC25', connecting: '#F5A623', error: '#FF4444' }[connected] || '#4A6491'
   const connLabel = { connected: 'Connected', connecting: 'Connecting', error: 'Offline' }[connected] || 'Connecting'
@@ -139,6 +170,8 @@ export function Header({
               ref={dropdownRef}
               role="listbox"
               aria-label="Select language"
+              aria-activedescendant={`lang-opt-${currentLang}`}
+              onKeyDown={onListKeyDown}
               style={{
                 position: 'fixed',
                 top: 'calc(var(--header-height) + 4px)',
@@ -159,9 +192,12 @@ export function Header({
                 return (
                   <button
                     key={lang.code}
+                    id={`lang-opt-${lang.code}`}
+                    ref={el => { optionRefs.current[i] = el }}
                     role="option"
                     aria-selected={sel}
-                    onClick={() => { onLanguageChange(lang.code); setLangOpen(false) }}
+                    tabIndex={-1}
+                    onClick={() => { onLanguageChange(lang.code); setLangOpen(false); triggerRef.current?.focus() }}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       width: '100%', textAlign: 'left',

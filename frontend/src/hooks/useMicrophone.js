@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { toast } from '../components/ToastContainer'
 
 export function useMicrophone({ onChunk, sampleRate = 16000 }) {
   const contextRef = useRef(null)
@@ -44,6 +45,14 @@ export function useMicrophone({ onChunk, sampleRate = 16000 }) {
       updateAmplitudes()
     } catch (e) {
       console.error('[AUDIO] Mic error:', e)
+      setIsRecording(false)
+      const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
+      toast(
+        denied
+          ? 'Microphone access denied — enable it in your browser to talk to Vaani'
+          : 'Could not access the microphone',
+        'error'
+      )
     }
   }, [sampleRate, onChunk, updateAmplitudes])
 

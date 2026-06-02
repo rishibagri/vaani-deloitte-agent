@@ -1,13 +1,14 @@
 export function QuickReplies({ suggestions, onSelect, visible }) {
   if (!visible || !suggestions || suggestions.length === 0) return null
   return (
-    <div style={{
+    <div role="group" aria-label="Suggested replies" style={{
       display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center',
       marginTop: 4,
+      padding: '0 16px',
     }}>
       {suggestions.map((text, i) => (
         <button
-          key={i}
+          key={text}
           onClick={() => onSelect(text)}
           style={{
             background: 'rgba(134,188,37,0.06)',

@@ -106,6 +106,11 @@ class SessionPipeline:
         self._audio_sent_in_turn = False
         self._turn_epoch = 0   # bumped on barge-in to drop stale audio/video frames
         self._suppress_output = False  # True between a barge-in and the next user turn
+        # MuseTalk audio coalescing: accumulate 24kHz PCM and run lip-sync once per
+        # window so the (fixed-cost) Whisper encoder is amortized over many frames.
+        self._mt_buf = bytearray()
+        # ~640ms of 24kHz int16 audio ≈ one full GPU batch of video frames.
+        self._mt_flush_bytes = int(0.64 * SAMPLE_RATE_GEMINI_OUT) * 2
 
     async def start(self):
         """Connect to Gemini and begin the output processing loop."""
@@ -150,6 +155,7 @@ class SessionPipeline:
                 if self._state == "speaking":
                     self._suppress_output = True
                 self._turn_epoch += 1
+                self._mt_buf.clear()  # drop un-rendered audio from the interrupted turn
                 self._flush_output_queue()
                 await self.agent.cancel()
                 await self.send_json({"type": "interrupt"})
@@ -183,6 +189,26 @@ class SessionPipeline:
             except Exception:
                 break
 
+    async def _flush_musetalk(self):
+        """Run lip-sync on the accumulated audio window and emit the video frames."""
+        if not self._mt_buf:
+            return
+        audio_24k = bytes(self._mt_buf)
+        self._mt_buf.clear()
+        if self._suppress_output:
+            return
+        epoch = self._turn_epoch
+        resampled = resample_24k_to_16k(audio_24k)
+        n_samples = len(resampled) // 2
+        n_frames = max(1, int((n_samples / 16000) * 25))
+        crops, frames, transforms, indices = self.loop_cache.next_batch(n_frames)
+        jpeg_frames = await self.musetalk.infer_batch(
+            resampled, crops, frames, transforms, indices
+        )
+        if epoch == self._turn_epoch and not self._suppress_output:
+            for jpeg in jpeg_frames:
+                await self.send_bytes(VIDEO_PREFIX + jpeg)
+
     async def _process_output(self):
         try:
             await self._process_output_inner()
@@ -202,7 +228,6 @@ class SessionPipeline:
             item_type = item.get("type")
 
             if item_type == "audio":
-                epoch = self._turn_epoch
                 audio_bytes = item["data"]
 
                 # Suppressed after a barge-in: discard the interrupted turn's audio
@@ -210,26 +235,16 @@ class SessionPipeline:
                 if self._suppress_output:
                     continue
 
-                # send raw audio to browser for immediate playback
+                # send raw audio to browser for immediate playback (low latency)
                 await self.send_bytes(AUDIO_PREFIX + audio_bytes)
+                await self._set_state("speaking")
 
-                # run lip sync if MuseTalk is loaded
+                # Accumulate for MuseTalk; only run inference once a window fills up,
+                # so the fixed-cost Whisper encoder amortizes over a full GPU batch.
                 if self.musetalk.loaded and self.loop_cache.loaded:
-                    resampled = resample_24k_to_16k(audio_bytes)
-                    # Pull face frames proportional to audio length (25 fps, 16kHz int16).
-                    n_samples = len(resampled) // 2
-                    n_frames = max(1, int((n_samples / 16000) * 25))
-                    crops, frames, transforms, indices = self.loop_cache.next_batch(n_frames)
-                    jpeg_frames = await self.musetalk.infer_batch(
-                        resampled, crops, frames, transforms, indices
-                    )
-                    # Barge-in may have happened during inference — skip stale frames.
-                    if epoch == self._turn_epoch:
-                        for jpeg in jpeg_frames:
-                            await self.send_bytes(VIDEO_PREFIX + jpeg)
-
-                if epoch == self._turn_epoch:
-                    await self._set_state("speaking")
+                    self._mt_buf.extend(audio_bytes)
+                    if len(self._mt_buf) >= self._mt_flush_bytes:
+                        await self._flush_musetalk()
 
             elif item_type == "transcript_agent":
                 current_transcript += item.get("text", "")
@@ -248,6 +263,9 @@ class SessionPipeline:
 
             elif item_type == "turn_complete":
                 current_transcript = ""
+                # Flush any trailing audio shorter than a full window.
+                if self.musetalk.loaded and self.loop_cache.loaded and not self._suppress_output:
+                    await self._flush_musetalk()
                 self._suppress_output = False  # interrupted turn is over
                 await self._set_state("idle")
 

@@ -23,6 +23,8 @@ class GeminiAgent:
         self._send_task = None
         self._recv_task = None
         self._renewal_task = None
+        self._reconnecting = False      # guard against overlapping reconnects
+        self._reconnect_fails = 0       # consecutive failures, for backoff
         # accumulated transcript for summary generation at session end / renewal
         self.transcript: list[dict] = []
 
@@ -201,22 +203,35 @@ class GeminiAgent:
 
     async def _reconnect(self):
         """Reopen the Gemini session after the receive stream closes unexpectedly."""
-        if not self._running:
-            return
-        for task in [self._send_task, self._renewal_task]:
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
+        if not self._running or self._reconnecting:
+            return  # already reconnecting — don't stack overlapping attempts
+        self._reconnecting = True
         try:
-            await self._ctx.__aexit__(None, None, None)
-        except Exception:
-            pass
-        await asyncio.sleep(0.2)
-        await self._open_session()
-        print(f"[GEMINI] Session reconnected for {self.session_id}")
+            for task in [self._send_task, self._renewal_task]:
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+            try:
+                await self._ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+            # Exponential backoff so a failing endpoint can't spin a tight loop.
+            backoff = min(0.2 * (2 ** self._reconnect_fails), 5.0)
+            await asyncio.sleep(backoff)
+            try:
+                await self._open_session()
+                self._reconnect_fails = 0
+                print(f"[GEMINI] Session reconnected for {self.session_id}")
+            except Exception as e:
+                self._reconnect_fails += 1
+                print(f"[GEMINI] Reconnect failed ({self._reconnect_fails}): {e}")
+                if self._running:
+                    asyncio.create_task(self._reconnect())
+        finally:
+            self._reconnecting = False
 
     async def _renewal_loop(self):
         await asyncio.sleep(self.SESSION_RENEWAL_SECONDS)

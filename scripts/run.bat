@@ -1,13 +1,13 @@
 @echo off
 echo ===================================================
-echo  Vaani — Starting both servers
+echo  Vaani - Starting both servers
 echo ===================================================
 echo.
 
 REM Backend in a named Command Prompt window
 start "Vaani Backend" cmd /k "cd /d %~dp0.. && backend\.venv\Scripts\activate && cd backend && python main.py"
 
-REM Short delay so the backend starts binding its port before the frontend hits it
+REM Short delay so the backend binds its port before the frontend hits it
 timeout /t 3 /nobreak >nul
 
 REM Frontend in a separate named Command Prompt window

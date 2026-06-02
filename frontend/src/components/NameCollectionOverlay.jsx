@@ -14,6 +14,12 @@ export function NameCollectionOverlay({ onSubmit, onSkip }) {
     nameRef.current?.focus()
   }, [])
 
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onSkip() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onSkip])
+
   function handleSubmit(e) {
     e.preventDefault()
     const trimmed = name.trim()
@@ -26,10 +32,11 @@ export function NameCollectionOverlay({ onSubmit, onSkip }) {
       role="dialog"
       aria-modal="true"
       aria-label="Welcome — tell us your name"
+      aria-describedby="name-overlay-desc"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 1000,
+        zIndex: 'var(--z-modal)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -74,7 +81,7 @@ export function NameCollectionOverlay({ onSubmit, onSkip }) {
           >
             Welcome. I don&apos;t think we&apos;ve met.
           </h2>
-          <p style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
+          <p id="name-overlay-desc" style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
             Tell me your name and I&apos;ll remember our conversations for next time.
           </p>
         </div>

@@ -524,7 +524,7 @@ function NewBotModal({ token, onCreated, onClose }) {
       background: 'rgba(1,10,26,0.82)', backdropFilter: 'blur(8px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label="New bot configuration" onClick={e => e.stopPropagation()} style={{
         background: 'var(--bg-surface-1)',
         border: '1px solid var(--border-default)',
         borderRadius: 'var(--radius-lg)', padding: '28px 24px',
@@ -592,7 +592,7 @@ function DeleteConfirm({ bot, token, onDeleted, onClose }) {
       background: 'rgba(1,10,26,0.82)', backdropFilter: 'blur(8px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={`Delete ${bot.company_name}`} onClick={e => e.stopPropagation()} style={{
         background: 'var(--bg-surface-1)', border: '1px solid rgba(255,68,68,0.25)',
         borderRadius: 'var(--radius-lg)', padding: '24px', width: 340,
         boxShadow: '0 24px 64px rgba(0,0,0,0.7)',

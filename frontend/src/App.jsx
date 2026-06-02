@@ -71,7 +71,11 @@ function ConnectingOverlay({ connected, geminiReady }) {
   }, [])
 
   return (
-    <div style={{
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Connecting to Vaani"
+      style={{
       position: 'fixed',
       inset: 0,
       zIndex: 400,
@@ -226,7 +230,13 @@ function MainApp() {
     } else if (msg.type === 'session_renewed') {
       toast('Session renewed')
     } else if (msg.type === 'error') {
-      toast(msg.message || 'Something went wrong', 'error')
+      // Transient socket errors are expected while the backend boots and the
+      // client auto-reconnects; the connection dot + overlay already convey this,
+      // so don't spam the user with a toast for every retry. Surface real,
+      // server-reported errors only.
+      if (msg.message !== 'WebSocket connection error') {
+        toast(msg.message || 'Something went wrong', 'error')
+      }
     }
     handleConvMessage(msg)
   }, [handleConvMessage, audioPlayback])
@@ -408,7 +418,7 @@ function MainApp() {
         }}
       >
         {/* Avatar + HUD */}
-        <div style={{ position: 'relative' }}>
+        <div className="avatar-stage" style={{ position: 'relative' }}>
           <AvatarDisplay
             appState={appState}
             amplitudes={amplitudes}
@@ -462,8 +472,18 @@ function MainApp() {
         @media (max-width: 768px) {
           .hud-layer > * { display: none !important; }
         }
+        /* The avatar stage has a fixed 460px footprint; scale it to fit
+           narrow viewports so it stays centered and never overflows. */
         @media (max-width: 520px) {
-          :root { --avatar-size: var(--avatar-size-mobile); }
+          .avatar-stage {
+            transform: scale(calc((100vw - 32px) / 460));
+            transform-origin: center top;
+          }
+        }
+        @media (max-width: 360px) {
+          .avatar-stage {
+            transform: scale(calc((100vw - 24px) / 460));
+          }
         }
       `}</style>
     </>

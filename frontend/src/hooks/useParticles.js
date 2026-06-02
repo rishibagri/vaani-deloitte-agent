@@ -49,11 +49,14 @@ export function useParticles(canvasRef, appState) {
     resize()
     window.addEventListener('resize', resize)
 
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
     const draw = () => {
       const { width: w, height: h } = canvas
       const target = STATE_SPEED[stateRef.current] ?? 1.0
+      // When motion is reduced, hold particles still (no position updates).
       speedRef.current += (target - speedRef.current) * 0.04
-      const mult = speedRef.current
+      const mult = reduceMotion ? 0 : speedRef.current
 
       ctx.clearRect(0, 0, w, h)
 
@@ -96,7 +99,7 @@ export function useParticles(canvasRef, appState) {
         ctx.fill()
       }
 
-      rafRef.current = requestAnimationFrame(draw)
+      if (!reduceMotion) rafRef.current = requestAnimationFrame(draw)
     }
 
     rafRef.current = requestAnimationFrame(draw)

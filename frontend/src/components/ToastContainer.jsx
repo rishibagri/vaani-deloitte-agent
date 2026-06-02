@@ -22,18 +22,24 @@ export function ToastContainer() {
   }, [add])
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 56,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      zIndex: 'var(--z-toast)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8,
-      alignItems: 'center',
-      pointerEvents: 'none',
-    }}>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{
+        position: 'fixed',
+        bottom: 56,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 'var(--z-toast)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        alignItems: 'center',
+        pointerEvents: 'none',
+        maxWidth: '92vw',
+      }}
+    >
       {toasts.map(t => (
         <div key={t.id} style={{
           background: t.type === 'error' ? 'rgba(217,59,59,0.12)' : 'rgba(1,52,122,0.92)',
