@@ -31,20 +31,22 @@ class GeminiAgent:
         return SYSTEM_PROMPT
 
     def _build_config(self):
-        return {
-            "response_modalities": ["AUDIO"],
-            "output_audio_transcription": {},
-            "input_audio_transcription": {},
-            "realtime_input_config": {
-                "automatic_activity_detection": {"disabled": True}
-            },
-            "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": GEMINI_VOICE}
-                }
-            },
-            "system_instruction": self._build_system_instruction(),
-        }
+        return types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)
+            ),
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=GEMINI_VOICE)
+                )
+            ),
+            system_instruction=types.Content(
+                parts=[types.Part(text=self._build_system_instruction())]
+            ),
+        )
 
     async def start(self):
         self.client = genai.Client(api_key=GEMINI_API_KEY)
@@ -54,7 +56,7 @@ class GeminiAgent:
     async def _open_session(self):
         self._ctx = self.client.aio.live.connect(
             model=GEMINI_MODEL,
-            config=self._build_config()
+            config=self._build_config(),
         )
         self.session = await self._ctx.__aenter__()
         self._send_task = asyncio.create_task(self._send_loop())

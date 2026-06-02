@@ -54,9 +54,10 @@ const INIT_MSGS = [
   'Almost ready...',
 ]
 
-function ConnectingOverlay() {
+function ConnectingOverlay({ connected, geminiReady }) {
   const [msgIdx, setMsgIdx] = useState(0)
   const [fade,   setFade]   = useState(true)
+  const isWaitingForGemini = connected === 'connected' && !geminiReady
 
   useEffect(() => {
     const cycle = setInterval(() => {
@@ -135,19 +136,19 @@ function ConnectingOverlay() {
         </div>
       </div>
 
-      {/* Cycling status message */}
+      {/* Status message */}
       <div style={{
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
         letterSpacing: '0.08em',
-        color: 'rgba(255,255,255,0.38)',
+        color: isWaitingForGemini ? 'rgba(134,188,37,0.60)' : 'rgba(255,255,255,0.38)',
         textTransform: 'uppercase',
         opacity: fade ? 1 : 0,
-        transition: 'opacity 300ms ease',
+        transition: 'opacity 300ms ease, color 400ms ease',
         minHeight: 16,
         paddingRight: '0.08em',
       }}>
-        {INIT_MSGS[msgIdx]}
+        {isWaitingForGemini ? 'Opening Gemini Live session...' : INIT_MSGS[msgIdx]}
       </div>
 
       {/* Progress bar — slow pulse */}
@@ -355,8 +356,8 @@ function MainApp() {
         <BootSequence onComplete={() => setBootDone(true)} />
       )}
 
-      {bootDone && connected !== 'connected' && (
-        <ConnectingOverlay />
+      {bootDone && (connected !== 'connected' || !geminiReady) && (
+        <ConnectingOverlay connected={connected} geminiReady={geminiReady} />
       )}
 
       <Header

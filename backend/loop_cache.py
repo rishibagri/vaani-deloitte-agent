@@ -6,7 +6,7 @@ from pathlib import Path
 
 os.environ["MPLBACKEND"] = "Agg"
 
-from config import MUSETALK_DIR, BASE_VIDEO_PATH
+from config import MUSETALK_DIR, BASE_VIDEO_PATH, BASE_DIR
 
 
 def _add_musetalk_to_path():
@@ -57,8 +57,14 @@ class LoopCache:
         _add_musetalk_to_path()
 
         try:
+            import os
             from musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs
-            coords, frame_list = get_landmark_and_bbox(raw_frames, bbox_shift=0)
+            _old_cwd = os.getcwd()
+            os.chdir(str(BASE_DIR))
+            try:
+                coords, frame_list = get_landmark_and_bbox(raw_frames, bbox_shift=0)
+            finally:
+                os.chdir(_old_cwd)
             self.full_frames = frame_list
             self.bboxes = coords
             self.face_crops = self._crop_faces(frame_list, coords)
