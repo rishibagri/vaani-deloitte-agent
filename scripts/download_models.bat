@@ -5,7 +5,7 @@ echo.
 
 call backend\.venv\Scripts\activate.bat
 
-pip install -q -U "huggingface_hub[cli]"
+pip install -q "huggingface_hub[cli]>=0.10.3,<1.0"
 
 cd scripts
 python download_models.py
