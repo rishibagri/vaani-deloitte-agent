@@ -104,6 +104,7 @@ class SessionPipeline:
         self._running = False
         self._current_language = "en"
         self._audio_sent_in_turn = False
+        self._turn_epoch = 0   # bumped on barge-in to drop stale audio/video frames
 
     async def start(self):
         """Connect to Gemini and begin the output processing loop."""
@@ -142,6 +143,13 @@ class SessionPipeline:
 
             if msg_type == "start_listening":
                 self._audio_sent_in_turn = False
+                # Barge-in: drop any pending output from the avatar's current turn,
+                # bump the epoch so in-flight MuseTalk frames are discarded, and tell
+                # the browser to stop playback + clear the animation canvas.
+                self._turn_epoch += 1
+                self._flush_output_queue()
+                await self.agent.cancel()
+                await self.send_json({"type": "interrupt"})
                 await self._set_state("listening")
 
             elif msg_type == "stop_listening":
@@ -158,6 +166,15 @@ class SessionPipeline:
 
             elif msg_type == "set_language":
                 self.agent.language = msg.get("code", "en")
+
+    def _flush_output_queue(self):
+        """Drop all pending items from the Gemini output queue (used on barge-in)."""
+        q = self.agent.output_queue
+        while not q.empty():
+            try:
+                q.get_nowait()
+            except Exception:
+                break
 
     async def _process_output(self):
         try:
@@ -178,7 +195,12 @@ class SessionPipeline:
             item_type = item.get("type")
 
             if item_type == "audio":
+                epoch = self._turn_epoch
                 audio_bytes = item["data"]
+
+                # If the user barged in between queueing and now, drop this audio.
+                if epoch != self._turn_epoch:
+                    continue
 
                 # send raw audio to browser for immediate playback
                 await self.send_bytes(AUDIO_PREFIX + audio_bytes)
@@ -190,10 +212,13 @@ class SessionPipeline:
                     jpeg_frames = await self.musetalk.infer_batch(
                         resampled, crops, frames, bboxes
                     )
-                    for jpeg in jpeg_frames:
-                        await self.send_bytes(VIDEO_PREFIX + jpeg)
+                    # Barge-in may have happened during inference — skip stale frames.
+                    if epoch == self._turn_epoch:
+                        for jpeg in jpeg_frames:
+                            await self.send_bytes(VIDEO_PREFIX + jpeg)
 
-                await self._set_state("speaking")
+                if epoch == self._turn_epoch:
+                    await self._set_state("speaking")
 
             elif item_type == "transcript_agent":
                 current_transcript += item.get("text", "")

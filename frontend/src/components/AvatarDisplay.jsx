@@ -99,11 +99,21 @@ function CircularWaveform({ amplitudes, visible }) {
   )
 }
 
-export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, avatarSrc }) {
+export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClearCanvas, avatarSrc }) {
   const canvasRef = useRef(null)
   const videoRef  = useRef(null)
   const fadeTimer = useRef(null)
   const bitmapBuf = useRef(null)
+
+  // Expose a way for the parent to instantly clear the MuseTalk canvas (barge-in).
+  const clearCanvas = useCallback(() => {
+    if (fadeTimer.current) clearTimeout(fadeTimer.current)
+    if (canvasRef.current) canvasRef.current.style.opacity = '0'
+  }, [])
+
+  useEffect(() => {
+    if (onClearCanvas) onClearCanvas(clearCanvas)
+  }, [onClearCanvas, clearCanvas])
 
   const renderFrame = useCallback((arrayBuffer) => {
     const canvas = canvasRef.current

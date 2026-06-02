@@ -190,6 +190,7 @@ function MainApp() {
   const pendingImageRef = useRef(null)
 
   const videoFrameHandlerRef = useRef(null)
+  const clearCanvasRef = useRef(null)
 
   const { status: cameraStatus, captureFrame } = useFaceCapture()
 
@@ -218,13 +219,17 @@ function MainApp() {
       setShowSuggestions(msg.value === 'idle')
     } else if (msg.type === 'suggestions') {
       setSuggestions(msg.items || [])
+    } else if (msg.type === 'interrupt') {
+      // Barge-in: stop the avatar's audio playback and clear the animation instantly.
+      audioPlayback.stop()
+      if (clearCanvasRef.current) clearCanvasRef.current()
     } else if (msg.type === 'session_renewed') {
       toast('Session renewed')
     } else if (msg.type === 'error') {
       toast(msg.message || 'Something went wrong', 'error')
     }
     handleConvMessage(msg)
-  }, [handleConvMessage])
+  }, [handleConvMessage, audioPlayback])
 
   const { sendJson, sendBinary } = useWebSocket({
     sessionId: identityReady ? sessionId : null,
@@ -408,6 +413,7 @@ function MainApp() {
             appState={appState}
             amplitudes={amplitudes}
             onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
+            onClearCanvas={(fn) => { clearCanvasRef.current = fn }}
             avatarSrc={botConfig?.avatar_video_url || null}
           />
 

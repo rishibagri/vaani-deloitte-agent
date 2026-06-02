@@ -7,15 +7,65 @@ import numpy as np
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-try:
-    import face_recognition
-    _FR_AVAILABLE = True
-except ImportError:
-    _FR_AVAILABLE = False
-    logging.warning("[MEMORY] face_recognition not installed — face identification disabled")
+from config import BASE_DIR
 
-# Euclidean distance threshold; face_recognition considers < 0.6 a match by default
-MATCH_THRESHOLD = 0.55
+# OpenCV face recognition (no dlib). Uses YuNet detector + SFace recognizer,
+# both built into opencv-python (>=4.5.4). Model files live in models/face/.
+_YUNET_PATH = BASE_DIR / "models" / "face" / "face_detection_yunet_2023mar.onnx"
+_SFACE_PATH = BASE_DIR / "models" / "face" / "face_recognition_sface_2021dec.onnx"
+
+# SFace cosine similarity: higher = more similar. OpenCV's recommended
+# same-identity threshold is 0.363.
+COSINE_MATCH_THRESHOLD = 0.363
+
+
+class _FaceEngine:
+    """OpenCV YuNet (detect) + SFace (128-d embedding) face engine."""
+
+    def __init__(self):
+        self.detector = None
+        self.recognizer = None
+        self.available = False
+        try:
+            if not _YUNET_PATH.exists() or not _SFACE_PATH.exists():
+                logging.warning(
+                    "[MEMORY] Face model ONNX files missing in models/face/ — "
+                    "run scripts/install_face_recognition.bat. Face ID disabled."
+                )
+                return
+            self.detector = cv2.FaceDetectorYN.create(
+                str(_YUNET_PATH), "", (320, 320), score_threshold=0.7
+            )
+            self.recognizer = cv2.FaceRecognizerSF.create(str(_SFACE_PATH), "")
+            self.available = True
+            logging.info("[MEMORY] OpenCV face engine (YuNet + SFace) ready")
+        except Exception as e:
+            logging.warning(f"[MEMORY] OpenCV face engine init failed: {e}")
+            self.available = False
+
+    def encode(self, bgr_img: np.ndarray) -> Optional[np.ndarray]:
+        """Return a 128-d float32 face embedding for the largest face, or None."""
+        if not self.available or bgr_img is None:
+            return None
+        h, w = bgr_img.shape[:2]
+        self.detector.setInputSize((w, h))
+        _, faces = self.detector.detect(bgr_img)
+        if faces is None or len(faces) == 0:
+            return None
+        # Pick the largest detected face (col 2,3 are width,height)
+        face = max(faces, key=lambda f: f[2] * f[3])
+        aligned = self.recognizer.alignCrop(bgr_img, face)
+        feat = self.recognizer.feature(aligned)  # shape (1, 128)
+        return feat.flatten().astype(np.float32)
+
+    @staticmethod
+    def cosine(a: np.ndarray, b: np.ndarray) -> float:
+        denom = (np.linalg.norm(a) * np.linalg.norm(b)) or 1e-8
+        return float(np.dot(a, b) / denom)
+
+
+_engine = _FaceEngine()
+_FR_AVAILABLE = _engine.available
 
 
 class FaceMemory:
@@ -77,7 +127,7 @@ class FaceMemory:
 
     # ── image helpers ──────────────────────────────────────────────────────────
 
-    def _to_rgb(self, image_data: "str | bytes") -> Optional[np.ndarray]:
+    def _to_bgr(self, image_data: "str | bytes") -> Optional[np.ndarray]:
         if isinstance(image_data, str):
             if "," in image_data:
                 image_data = image_data.split(",", 1)[1]
@@ -85,19 +135,16 @@ class FaceMemory:
         else:
             raw = image_data
         arr = np.frombuffer(raw, np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if img is None:
-            return None
-        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)  # BGR, or None
 
     def _extract_encoding(self, image_data: "str | bytes") -> Optional[list]:
         if not _FR_AVAILABLE:
             return None
-        img = self._to_rgb(image_data)
+        img = self._to_bgr(image_data)
         if img is None:
             return None
-        encodings = face_recognition.face_encodings(img)
-        return encodings[0].tolist() if encodings else None
+        feat = _engine.encode(img)
+        return feat.tolist() if feat is not None else None
 
     # ── public API ─────────────────────────────────────────────────────────────
 
@@ -116,11 +163,12 @@ class FaceMemory:
         if not users:
             return None
 
-        known = [np.array(u["face_encoding"]) for u in users]
-        distances = face_recognition.face_distance(known, np.array(encoding))
-        best = int(np.argmin(distances))
+        probe = np.array(encoding, dtype=np.float32)
+        sims = [_engine.cosine(np.array(u["face_encoding"], dtype=np.float32), probe)
+                for u in users]
+        best = int(np.argmax(sims))
 
-        if distances[best] > MATCH_THRESHOLD:
+        if sims[best] < COSINE_MATCH_THRESHOLD:
             return None
 
         user = dict(users[best])

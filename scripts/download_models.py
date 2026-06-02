@@ -10,6 +10,7 @@ os.makedirs('../models/whisper', exist_ok=True)
 os.makedirs('../models/dwpose', exist_ok=True)
 os.makedirs('../models/syncnet', exist_ok=True)
 os.makedirs('../models/face-parse-bisent', exist_ok=True)
+os.makedirs('../models/face', exist_ok=True)
 
 print('Downloading MuseTalk V1.0 weights...')
 snapshot_download('TMElyralab/MuseTalk', local_dir='../models', allow_patterns=['musetalk/*'])
@@ -20,9 +21,25 @@ snapshot_download('TMElyralab/MuseTalk', local_dir='../models', allow_patterns=[
 print('Downloading SD VAE...')
 snapshot_download('stabilityai/sd-vae-ft-mse', local_dir='../models/sd-vae', allow_patterns=['config.json', 'diffusion_pytorch_model.bin', 'diffusion_pytorch_model.safetensors'])
 
-print('Downloading Whisper tiny.pt (openai-whisper format)...')
-import whisper as _whisper
-_whisper.load_model('tiny', download_root='../models/whisper')
+print('Downloading Whisper (HuggingFace format — required for MuseTalk V1.5)...')
+snapshot_download(
+    'openai/whisper-tiny',
+    local_dir='../models/whisper',
+    allow_patterns=[
+        'config.json',
+        'preprocessor_config.json',
+        'tokenizer.json',
+        'tokenizer_config.json',
+        'generation_config.json',
+        'model.safetensors',
+        'pytorch_model.bin',
+        'vocab.json',
+        'merges.txt',
+        'normalizer.json',
+        'added_tokens.json',
+        'special_tokens_map.json',
+    ],
+)
 print('Whisper downloaded.')
 
 print('Downloading DWPose...')
@@ -35,6 +52,16 @@ print('Downloading face parse model...')
 urllib.request.urlretrieve(
     'https://download.pytorch.org/models/resnet18-5c106cde.pth',
     '../models/face-parse-bisent/resnet18-5c106cde.pth'
+)
+
+print('Downloading OpenCV face recognition models (YuNet + SFace)...')
+urllib.request.urlretrieve(
+    'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx',
+    '../models/face/face_detection_yunet_2023mar.onnx'
+)
+urllib.request.urlretrieve(
+    'https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx',
+    '../models/face/face_recognition_sface_2021dec.onnx'
 )
 
 print('All downloads complete.')

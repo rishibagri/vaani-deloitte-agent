@@ -1,43 +1,34 @@
 @echo off
 echo ===================================================
-echo  Installing face recognition (optional feature)
+echo  Installing face recognition (OpenCV - no dlib!)
 echo ===================================================
 echo.
-echo Uses dlib-bin (precompiled) so no Visual C++ build is needed.
+echo Downloads two small ONNX models (~5 MB). No compilation,
+echo no Visual C++, no dlib. Uses OpenCV's built-in YuNet + SFace.
 echo.
+
+if not exist "models\face" mkdir "models\face"
 
 call backend\.venv\Scripts\activate.bat
 
-echo [1/4] Installing precompiled dlib...
-pip install dlib-bin
-if errorlevel 1 (
-    echo [ERROR] dlib-bin install failed.
-    echo         Your Python version may not have a prebuilt wheel.
-    echo         dlib-bin supports Python 3.7-3.12 on Windows x64.
-    pause & exit /b 1
-)
+echo [1/2] Downloading YuNet face detector...
+python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx', 'models/face/face_detection_yunet_2023mar.onnx'); print('  done')"
 
-echo [2/4] Installing face_recognition_models...
-pip install git+https://github.com/ageitgey/face_recognition_models
-
-echo [3/4] Installing face_recognition (without deps, dlib already provided)...
-pip install face_recognition --no-deps
-
-echo [4/4] Ensuring Pillow and Click are present...
-pip install Pillow Click
+echo [2/2] Downloading SFace recognizer...
+python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx', 'models/face/face_recognition_sface_2021dec.onnx'); print('  done')"
 
 echo.
-echo Verifying...
-python -c "import face_recognition; print('[OK] face_recognition imported successfully')"
+echo Verifying OpenCV face modules...
+python -c "import cv2; cv2.FaceDetectorYN.create('models/face/face_detection_yunet_2023mar.onnx','',(320,320)); cv2.FaceRecognizerSF.create('models/face/face_recognition_sface_2021dec.onnx',''); print('[OK] OpenCV face recognition ready')"
 if errorlevel 1 (
-    echo [ERROR] face_recognition import failed. See errors above.
+    echo [ERROR] OpenCV face modules failed to load. See errors above.
     pause & exit /b 1
 )
 
 deactivate
 echo.
 echo ===================================================
-echo  Face recognition installed!
+echo  Face recognition ready!
 echo ===================================================
 echo  Set DATABASE_URL in .env to enable the memory layer.
 echo.

@@ -191,27 +191,19 @@ If these variables are blank, Vaani falls back to a local `data/memory.json` fil
 
 ## Optional: PostgreSQL Face Recognition Memory
 
-When a `DATABASE_URL` is set, Vaani identifies returning users by face using `face_recognition` (dlib-based). On first visit, users are asked their name. On return visits, Vaani greets them by name and uses past conversation summaries as context.
+When a `DATABASE_URL` is set, Vaani identifies returning users by face using **OpenCV's built-in YuNet + SFace** models (no dlib, no compilation). On first visit, users are asked their name. On return visits, Vaani greets them by name and uses past conversation summaries as context.
 
 ```
 DATABASE_URL=postgresql://rishii3@localhost:5432/vaani
 ```
 
-The schema is created automatically on first connection. To install the face recognition library:
-
-**Windows** — run the installer script (uses precompiled `dlib-bin`, no Visual C++ build needed):
+The schema is created automatically on first connection. To set up face recognition, just download the two small ONNX models:
 
 ```
 scripts\install_face_recognition.bat
 ```
 
-**Mac / Linux** — dlib compiles cleanly with a working toolchain:
-
-```bash
-pip install cmake dlib face_recognition
-```
-
-> On Windows, building real `dlib` from source needs Visual C++ Build Tools and usually fails. The script installs `dlib-bin` (a precompiled drop-in) and `face_recognition` with `--no-deps` to avoid triggering a source build.
+(They're also fetched by `scripts\download_models.bat`.) No extra Python packages are needed — `opencv-python` already ships the `FaceDetectorYN` and `FaceRecognizerSF` classes. Matching uses cosine similarity with SFace's recommended 0.363 same-identity threshold.
 
 ---
 

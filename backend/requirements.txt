@@ -8,8 +8,9 @@ librosa==0.10.1
 httpx>=0.25.0
 pyyaml>=6.0
 
-# Persistent face-recognition memory (PostgreSQL)
-# Install separately if needed: pip install cmake dlib face_recognition
+# Persistent face-recognition memory (PostgreSQL).
+# Face recognition uses OpenCV's built-in YuNet + SFace (no dlib needed) —
+# run scripts/install_face_recognition.bat to fetch the ONNX models.
 psycopg2-binary>=2.9.0
 
 # Supabase semantic memory layer (optional - leave SUPABASE_URL blank to skip)

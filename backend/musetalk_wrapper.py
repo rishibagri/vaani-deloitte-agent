@@ -1,6 +1,8 @@
 import asyncio
 import os
 import sys
+import wave
+import tempfile
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,17 +21,25 @@ def _setup_path():
 class MuseTalkModel:
     """
     Wraps MuseTalk V1.5 inference for real-time streaming.
+
+    V1.5 pipeline (matches scripts/realtime_inference.py):
+      - HuggingFace transformers.WhisperModel encoder for audio features
+      - AudioProcessor (mel feature extractor + per-frame whisper chunking)
+      - VAE wrapper: 8-channel [masked | ref] latent input
+      - UNet2DConditionModel + PositionalEncoding
+
     All heavy imports happen inside load() so the module is safe to import
     on machines without CUDA or before GPU packages are installed.
     """
 
     def __init__(self):
         self.device          = None
-        self.vae             = None
+        self.weight_dtype    = None
+        self.vae             = None  # MuseTalk VAE wrapper
         self.unet            = None  # MuseTalk UNet wrapper; real model at self.unet.model
-        self.audio_processor = None
-        self.scaling_factor  = 0.18215
-        self._mask_tensor    = None
+        self.pe              = None  # PositionalEncoding
+        self.whisper         = None  # transformers WhisperModel
+        self.audio_processor = None  # AudioProcessor
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -44,66 +54,44 @@ class MuseTalkModel:
 
         try:
             import torch
+            from transformers import WhisperModel
+            from musetalk.models.vae import VAE
+            from musetalk.models.unet import UNet, PositionalEncoding
+            from musetalk.utils.audio_processor import AudioProcessor
+
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            # Use float32 throughout to avoid half/float device-dtype mismatches.
+            self.weight_dtype = torch.float32
             if not torch.cuda.is_available():
                 print("[MUSETALK] No CUDA GPU - running on CPU (slow)")
             print(f"[MUSETALK] Loading models on {self.device}...")
 
-            from diffusers import AutoencoderKL
-            from musetalk.models.unet import UNet
-            from musetalk.whisper.audio2feature import Audio2Feature
+            whisper_dir = str(BASE_DIR / "models" / "whisper")
 
-            # SD VAE — encodes/decodes face images to/from latent space
-            self.vae = AutoencoderKL.from_pretrained(str(BASE_DIR / "models" / "sd-vae"))
-            self.vae = self.vae.to(self.device)
-            self.vae.requires_grad_(False)
-            self.vae.eval()
-            self.scaling_factor = self.vae.config.scaling_factor  # 0.18215 for sd-vae-ft-mse
+            # VAE wrapper (encode/decode + 8-channel latent prep)
+            self.vae = VAE(model_path=str(BASE_DIR / "models" / "sd-vae"), use_float16=False)
 
-            # Lower-half mask: keep upper half (eyes/nose), zero mouth/chin.
-            # MuseTalk learns to regenerate the masked mouth region from audio.
-            mask = torch.zeros((256, 256), dtype=torch.float32)
-            mask[:128, :] = 1.0
-            self._mask_tensor = mask.unsqueeze(0).to(self.device)  # [1, 256, 256]
+            # UNet V1.5 + positional encoding
+            self.unet = UNet(unet_config=str(MUSETALK_UNET_CFG), model_path=str(MUSETALK_UNET_PATH))
+            self.unet.model = self.unet.model.to(self.device).eval()
+            self.pe = PositionalEncoding(d_model=384).to(self.device)
 
-            # MuseTalk UNet V1.5 wrapper — real nn.Module lives at self.unet.model
-            # UNet also contains its own PositionalEncoding at self.unet.pe
-            self.unet = UNet(
-                unet_config=str(MUSETALK_UNET_CFG),
-                model_path=str(MUSETALK_UNET_PATH),
-            )
-            self.unet.model.eval()  # UNet wrapper doesn't call eval() internally
-
-            # Whisper-based audio feature extractor (MuseTalk's bundled whisper fork)
-            whisper_pt = BASE_DIR / "models" / "whisper" / "tiny.pt"
-            whisper_arg = str(whisper_pt) if whisper_pt.exists() else "tiny"
-            self.audio_processor = Audio2Feature(model_path=whisper_arg)
+            # HuggingFace Whisper encoder + mel feature extractor
+            self.audio_processor = AudioProcessor(feature_extractor_path=whisper_dir)
+            self.whisper = WhisperModel.from_pretrained(whisper_dir)
+            self.whisper = self.whisper.to(device=self.device, dtype=self.weight_dtype).eval()
 
             self._loaded = True
-            print("[MUSETALK] All models loaded and ready")
+            print("[MUSETALK] All V1.5 models loaded and ready")
 
         except Exception as e:
+            import traceback
             print(f"[MUSETALK] Failed to load models: {e}")
+            traceback.print_exc()
             print("[MUSETALK] Falling back to loop-only mode (no lip sync)")
             self._loaded = False
         finally:
             os.chdir(_old_cwd)
-
-    def _img_to_tensor(self, img_bgr, half_mask: bool):
-        """
-        Match MuseTalk VAE.preprocess_img: resize 256, optional lower-half mask,
-        normalize to [-1, 1], return [1, 3, 256, 256] tensor on device.
-        """
-        import torch
-        import cv2
-        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        img_rgb = cv2.resize(img_rgb, (256, 256), interpolation=cv2.INTER_LANCZOS4)
-        x = img_rgb.astype(np.float32) / 255.0
-        x = torch.from_numpy(x).permute(2, 0, 1)  # [3, 256, 256]
-        if half_mask:
-            x = x * self._mask_tensor  # zero the lower half (mouth region)
-        x = (x - 0.5) / 0.5            # normalize to [-1, 1]
-        return x.unsqueeze(0).to(self.device)
 
     def _infer_sync(self, audio_bytes_16k: bytes, face_crops: list,
                     full_frames: list, bboxes: list) -> list:
@@ -111,71 +99,60 @@ class MuseTalkModel:
         import cv2
 
         _old_cwd = os.getcwd()
-        os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
+        os.chdir(str(MUSETALK_DIR))
 
+        tmp_path = None
         try:
-            # Convert PCM bytes to float32 and pass directly to whisper transcribe.
-            # whisper.transcribe() accepts a numpy float32 array, bypassing ffmpeg entirely.
-            audio_float = np.frombuffer(audio_bytes_16k, dtype=np.int16).astype(np.float32) / 32768.0
-            result = self.audio_processor.model.transcribe(audio_float, verbose=False)
+            # Write PCM to a temp WAV — librosa reads WAV via soundfile (no ffmpeg needed)
+            tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            with wave.open(tmp_path, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)   # int16
+                wf.setframerate(16000)
+                wf.writeframes(audio_bytes_16k)
 
-            embed_list = []
-            for emb in result.get('segments', []):
-                enc = emb['encoder_embeddings']
-                enc = enc.transpose(0, 2, 1, 3).squeeze(0)
-                end_idx = int(emb['end'])
-                start_idx = int(emb['start'])
-                emb_end_idx = int((end_idx - start_idx) / 2)
-                embed_list.append(enc[:emb_end_idx])
-
-            if not embed_list:
+            # V1.5 audio feature extraction
+            feats, librosa_length = self.audio_processor.get_audio_feature(
+                tmp_path, weight_dtype=self.weight_dtype
+            )
+            if feats is None or librosa_length == 0:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
-            audio_feat   = np.concatenate(embed_list, axis=0)
-            audio_chunks = self.audio_processor.feature2chunks(audio_feat, fps=25)
+            whisper_chunks = self.audio_processor.get_whisper_chunk(
+                feats, self.device, self.weight_dtype, self.whisper, librosa_length, fps=25,
+            )
 
-            if not audio_chunks:
-                return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
-
-            n_frames = min(len(face_crops), len(audio_chunks))
+            n_frames = min(len(face_crops), len(whisper_chunks))
             if n_frames == 0:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
             result_frames = []
-            sf = self.scaling_factor
+            timesteps = torch.tensor([0], device=self.device)
 
             with torch.no_grad():
                 for i in range(n_frames):
                     face_bgr   = face_crops[i]   # 256x256 BGR
                     full_frame = full_frames[i]
                     bbox       = bboxes[i]
-                    audio_emb  = audio_chunks[i]
 
-                    # Build 8-channel UNet input: [masked_latent | ref_latent]
-                    # ref = full face; masked = lower half (mouth) zeroed out.
-                    ref_tensor    = self._img_to_tensor(face_bgr, half_mask=False)
-                    masked_tensor = self._img_to_tensor(face_bgr, half_mask=True)
-                    ref_latents    = self.vae.encode(ref_tensor).latent_dist.sample() * sf
-                    masked_latents = self.vae.encode(masked_tensor).latent_dist.sample() * sf
-                    latent_input   = torch.cat([masked_latents, ref_latents], dim=1)  # [1,8,32,32]
+                    # 8-channel [masked | ref] latent via MuseTalk VAE wrapper
+                    latent_input = self.vae.get_latents_for_unet(face_bgr)
+                    latent_input = latent_input.to(device=self.device, dtype=self.weight_dtype)
 
-                    # Audio embedding + positional encoding (via UNet's built-in PE)
-                    audio_t = torch.from_numpy(audio_emb).float().unsqueeze(0).to(self.device)
-                    audio_t = self.unet.pe(audio_t)
-                    ts      = torch.zeros(1, dtype=torch.long).to(self.device)
+                    # Per-frame audio feature [50, 384] -> [1, 50, 384] -> positional encoding
+                    audio_t = whisper_chunks[i].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
+                    audio_t = self.pe(audio_t)
 
-                    # UNet forward — outputs 4-channel latent
                     pred_latents = self.unet.model(
-                        latent_input, ts, encoder_hidden_states=audio_t
+                        latent_input, timesteps, encoder_hidden_states=audio_t
                     ).sample
 
-                    # Decode latent back to pixel space (MuseTalk decode_latents)
-                    pred_latents = (1.0 / sf) * pred_latents
-                    decoded = self.vae.decode(pred_latents).sample
-                    decoded = (decoded / 2 + 0.5).clamp(0, 1)
-                    decoded = decoded.squeeze(0).permute(1, 2, 0).cpu().numpy()
-                    generated_rgb = (decoded * 255).round().astype(np.uint8)
-                    generated_bgr = cv2.cvtColor(generated_rgb, cv2.COLOR_RGB2BGR)
+                    # decode_latents returns BGR uint8 numpy [B, 256, 256, 3]
+                    recon = self.vae.decode_latents(pred_latents)
+                    generated_bgr = recon[0]
+                    generated_bgr = cv2.resize(generated_bgr, (256, 256))
 
                     # Paste generated face back into the full frame at the face bbox
                     result_frame = full_frame.copy()
@@ -194,6 +171,11 @@ class MuseTalkModel:
             return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
         finally:
             os.chdir(_old_cwd)
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
     async def infer_batch(self, audio_bytes_16k: bytes, face_crops: list,
                           full_frames: list, bboxes: list) -> list:
