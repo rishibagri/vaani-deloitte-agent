@@ -68,7 +68,15 @@ class GeminiAgent:
             config=self._build_config(voice=voice),
         )
         print(f"[GEMINI] Context created ({time.time()-t0:.2f}s), awaiting handshake...")
-        self.session = await self._ctx.__aenter__()
+        try:
+            self.session = await asyncio.wait_for(
+                self._ctx.__aenter__(), timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            raise ConnectionError(
+                f"Gemini Live handshake timed out after 30s. "
+                f"Check network connectivity and that GEMINI_API_KEY is valid."
+            )
         print(f"[GEMINI] Session opened in {time.time()-t0:.2f}s for {self.session_id}")
         self._send_task = asyncio.create_task(self._send_loop())
         self._recv_task = asyncio.create_task(self._receive_loop())

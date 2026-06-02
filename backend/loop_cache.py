@@ -78,7 +78,10 @@ class LoopCache:
             try:
                 coords = self._detect_faces_opencv(raw_frames)
                 frame_list = raw_frames
-                print("[SETUP] OpenCV face detection succeeded")
+                self.full_frames = frame_list
+                self.bboxes = coords
+                self.face_crops = self._crop_faces(frame_list, coords)
+                print(f"[SETUP] OpenCV face detection succeeded — {len(self.face_crops)} crops cached.")
             except Exception as e2:
                 print(f"[SETUP] OpenCV detection also failed: {e2}")
                 print("[SETUP] Falling back to full-frame mode")
@@ -130,12 +133,8 @@ class LoopCache:
         return crops
 
     def next_batch(self, n: int):
-        """
-        Pull n frames from the circular buffer.
-        Returns face_crops, full_frames, bboxes for inference.
-        """
-        if not self._loaded:
-            raise RuntimeError("[SETUP] Loop cache not loaded. Call load() first.")
+        if not self._loaded or self.frame_count == 0:
+            raise RuntimeError("[SETUP] Loop cache not loaded or has no frames.")
         crops, frames, boxes = [], [], []
         for _ in range(n):
             i = self.idx % self.frame_count

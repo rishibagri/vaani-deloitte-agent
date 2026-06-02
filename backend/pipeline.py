@@ -108,7 +108,16 @@ class SessionPipeline:
     async def start(self):
         """Connect to Gemini and begin the output processing loop."""
         self._running = True
-        await self.agent.start()
+        try:
+            await self.agent.start()
+        except Exception as e:
+            print(f"[PIPELINE] Gemini connection failed: {e}")
+            await self.send_json({
+                "type": "error",
+                "message": f"Could not connect to Gemini: {e}"
+            })
+            self._running = False
+            return
         await self._set_state("idle")
         asyncio.create_task(self._process_output())
         print(f"[PIPELINE] Session {self.session_id} started")
@@ -151,11 +160,13 @@ class SessionPipeline:
                 self.agent.language = msg.get("code", "en")
 
     async def _process_output(self):
-        """
-        Read from the Gemini agent output queue and forward to the browser.
-        Audio goes through MuseTalk for lip sync, then both audio and
-        frames are sent to the browser simultaneously.
-        """
+        try:
+            await self._process_output_inner()
+        except Exception as e:
+            print(f"[PIPELINE] _process_output crashed: {e}")
+            await self.send_json({"type": "error", "message": "Output pipeline error — please reload."})
+
+    async def _process_output_inner(self):
         current_transcript = ""
 
         while self._running:
