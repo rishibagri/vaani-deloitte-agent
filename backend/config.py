@@ -46,7 +46,7 @@ MUSETALK_FP16         = os.getenv("MUSETALK_FP16", "true").strip().lower() == "t
 # space) keyed by audio feature, and reuse on similar audio — skipping the
 # UNet+VAE for repeated visemes. Self-warms as the avatar talks.
 MUSETALK_MOUTH_CACHE  = os.getenv("MUSETALK_MOUTH_CACHE", "true").strip().lower() == "true"
-MUSETALK_CACHE_SIM    = float(os.getenv("MUSETALK_CACHE_SIM", 0.985))  # cosine hit threshold
+MUSETALK_CACHE_SIM    = float(os.getenv("MUSETALK_CACHE_SIM", 0.96))   # cosine hit threshold
 MUSETALK_CACHE_MAX    = int(os.getenv("MUSETALK_CACHE_MAX", 512))      # max cached visemes
 
 # Fine-tune nudge in canonical space (landmark alignment should make these

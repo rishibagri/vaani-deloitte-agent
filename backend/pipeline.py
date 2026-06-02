@@ -105,6 +105,7 @@ class SessionPipeline:
         self._current_language = "en"
         self._audio_sent_in_turn = False
         self._turn_epoch = 0   # bumped on barge-in to drop stale audio/video frames
+        self._suppress_output = False  # True between a barge-in and the next user turn
 
     async def start(self):
         """Connect to Gemini and begin the output processing loop."""
@@ -143,9 +144,11 @@ class SessionPipeline:
 
             if msg_type == "start_listening":
                 self._audio_sent_in_turn = False
-                # Barge-in: drop any pending output from the avatar's current turn,
-                # bump the epoch so in-flight MuseTalk frames are discarded, and tell
-                # the browser to stop playback + clear the animation canvas.
+                # Barge-in: if the avatar is mid-response, suppress the rest of that
+                # turn's audio/video (which keeps streaming in from Gemini), drop the
+                # queued output, and tell the browser to stop playback + clear canvas.
+                if self._state == "speaking":
+                    self._suppress_output = True
                 self._turn_epoch += 1
                 self._flush_output_queue()
                 await self.agent.cancel()
@@ -154,13 +157,17 @@ class SessionPipeline:
 
             elif msg_type == "stop_listening":
                 if not self._audio_sent_in_turn:
-                    # mic released with no audio — don't send a blank turn to Gemini
+                    # Mic released with no audio. Keep suppressing any interrupted
+                    # turn (it ends on turn_complete); just return to idle.
                     await self._set_state("idle")
                 else:
+                    # New user turn is going to Gemini — the next response may play.
+                    self._suppress_output = False
                     await self.agent.end_user_turn()
                     await self._set_state("thinking")
 
             elif msg_type == "cancel":
+                self._suppress_output = False
                 await self.agent.cancel()
                 await self._set_state("idle")
 
@@ -198,8 +205,9 @@ class SessionPipeline:
                 epoch = self._turn_epoch
                 audio_bytes = item["data"]
 
-                # If the user barged in between queueing and now, drop this audio.
-                if epoch != self._turn_epoch:
+                # Suppressed after a barge-in: discard the interrupted turn's audio
+                # that Gemini keeps streaming until the user starts a new turn.
+                if self._suppress_output:
                     continue
 
                 # send raw audio to browser for immediate playback
@@ -240,6 +248,7 @@ class SessionPipeline:
 
             elif item_type == "turn_complete":
                 current_transcript = ""
+                self._suppress_output = False  # interrupted turn is over
                 await self._set_state("idle")
 
             elif item_type == "interrupted":

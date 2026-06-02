@@ -148,6 +148,9 @@ class MuseTalkModel:
         if not self._loaded or not face_crops:
             return
         import torch
+        # New avatar → previously cached canonical mouths are no longer valid.
+        self._ck_keys = None
+        self._ck_imgs = []
         _old_cwd = os.getcwd()
         os.chdir(str(MUSETALK_DIR))
         try:
@@ -282,6 +285,11 @@ class MuseTalkModel:
                         miss_idx.append(i)
             else:
                 miss_idx = list(range(n_frames))
+
+            if MUSETALK_MOUTH_CACHE and n_frames > 0:
+                hits = n_frames - len(miss_idx)
+                print(f"[MUSETALK] codebook {hits}/{n_frames} hits "
+                      f"({100*hits//n_frames}%), size={len(self._ck_imgs)}")
 
             # ── 3. Run UNet+VAE only on the misses, in GPU batches ──
             with torch.no_grad():

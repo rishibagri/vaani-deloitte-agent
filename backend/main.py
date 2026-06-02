@@ -1,8 +1,10 @@
 import asyncio
+import base64
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Header as HTTPHeader, HTTPException, Depends, Query, Request, WebSocket, WebSocketDisconnect
@@ -10,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response as FastResponse
 from pydantic import BaseModel
 
-from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMORY_ENABLED, DATABASE_URL, GEMINI_API_KEY
+from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMORY_ENABLED, DATABASE_URL, GEMINI_API_KEY, BASE_DIR, BASE_VIDEO_PATH
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
 from pipeline import SessionPipeline
@@ -20,6 +22,59 @@ musetalk = MuseTalkModel()
 
 active_sessions: dict[str, SessionPipeline] = {}
 _session_user_map: dict[str, int] = {}
+
+# Track which bot's avatar is currently loaded into the loop cache, plus a lock
+# so two sessions never rebuild it at the same time.
+_loaded_avatar_sig: Optional[str] = None
+_avatar_lock = asyncio.Lock()
+
+
+def _resolve_avatar_video() -> Path:
+    """Return a file path for the active bot's avatar video (default if none/custom-missing)."""
+    try:
+        from bot_config import get_active
+        bot = get_active()
+        url = bot.get("avatar_video_url")
+        if url and url.startswith("data:video"):
+            header, b64 = url.split(",", 1)
+            ext = "webm" if "webm" in header else "mp4"
+            out = BASE_DIR / "data" / "video" / f"active_{bot['id']}.{ext}"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            if not out.exists():
+                out.write_bytes(base64.b64decode(b64))
+            return out
+    except Exception as e:
+        print(f"[SETUP] Avatar video resolve failed, using default: {e}")
+    return BASE_VIDEO_PATH
+
+
+async def ensure_avatar_loaded():
+    """Rebuild the loop cache + latents for the active bot's avatar if it changed."""
+    global _loaded_avatar_sig
+    if not MUSETALK_ENABLED or not musetalk.loaded:
+        return
+    try:
+        from bot_config import get_active
+        bot = get_active()
+        sig = f"{bot.get('id')}::{hash(bot.get('avatar_video_url') or 'default')}"
+    except Exception:
+        sig = "default"
+    if sig == _loaded_avatar_sig:
+        return
+    async with _avatar_lock:
+        if sig == _loaded_avatar_sig:  # re-check after acquiring the lock
+            return
+        path = _resolve_avatar_video()
+        loop = asyncio.get_event_loop()
+
+        def _rebuild():
+            loop_cache.load(path)
+            if loop_cache.loaded:
+                musetalk.prepare_latents(loop_cache.face_crops)
+
+        await loop.run_in_executor(None, _rebuild)
+        _loaded_avatar_sig = sig
+        print(f"[SETUP] Avatar loaded for bot: {sig}")
 
 face_memory = None
 if MEMORY_ENABLED:
@@ -42,10 +97,8 @@ async def lifespan(app: FastAPI):
 
     if MUSETALK_ENABLED:
         musetalk.load()
-        loop_cache.load()
-        # Precompute face latents once so inference skips per-frame VAE encoding
-        if musetalk.loaded and loop_cache.loaded:
-            musetalk.prepare_latents(loop_cache.face_crops)
+        # Build the loop cache + latents for the currently-active bot's avatar.
+        await ensure_avatar_loaded()
     else:
         print("[SETUP] MuseTalk disabled. Avatar will show loop video only.")
 
@@ -154,6 +207,10 @@ async def enroll_user(session_id: str, body: EnrollBody):
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     print(f"[BROWSER] Connected: {session_id}")
+
+    # Make sure the loop cache matches the currently-active bot's avatar
+    # (rebuilds if the admin switched bots since the last session).
+    await ensure_avatar_loaded()
 
     async def send_bytes(data: bytes):
         try:

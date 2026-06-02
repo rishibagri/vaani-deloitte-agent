@@ -43,8 +43,14 @@ class LoopCache:
         self.idx = 0
         self._loaded = False
 
-    def load(self):
-        print("[SETUP] Loading loop video and computing face alignment...")
+    def load(self, video_path=None):
+        if video_path is not None:
+            self.video_path = video_path
+        # Reset any previously-loaded avatar so a bot switch rebuilds cleanly.
+        self.full_frames, self.face_crops, self.transforms = [], [], []
+        self.frame_count, self.idx, self._loaded = 0, 0, False
+
+        print(f"[SETUP] Loading loop video and computing face alignment: {self.video_path}")
 
         cap = cv2.VideoCapture(str(self.video_path))
         if not cap.isOpened():
