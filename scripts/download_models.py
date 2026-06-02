@@ -20,8 +20,10 @@ snapshot_download('TMElyralab/MuseTalk', local_dir='../models', allow_patterns=[
 print('Downloading SD VAE...')
 snapshot_download('stabilityai/sd-vae-ft-mse', local_dir='../models/sd-vae', allow_patterns=['config.json', 'diffusion_pytorch_model.bin', 'diffusion_pytorch_model.safetensors'])
 
-print('Downloading Whisper...')
-snapshot_download('openai/whisper-tiny', local_dir='../models/whisper', allow_patterns=['config.json', 'pytorch_model.bin', 'preprocessor_config.json'])
+print('Downloading Whisper tiny.pt (openai-whisper format)...')
+import whisper as _whisper
+_whisper.load_model('tiny', download_root='../models/whisper')
+print('Whisper downloaded.')
 
 print('Downloading DWPose...')
 snapshot_download('yzd-v/DWPose', local_dir='../models/dwpose', allow_patterns=['dw-ll_ucoco_384.pth'])

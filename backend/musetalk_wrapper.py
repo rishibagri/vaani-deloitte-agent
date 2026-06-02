@@ -68,9 +68,11 @@ class MuseTalkModel:
             self.pe = PositionalEncoding(d_model=384)
 
             # Whisper-based audio feature extractor
-            self.audio_processor = Audio2Feature(
-                model_path=str(BASE_DIR / "models" / "whisper")
-            )
+            # openai-whisper expects a model name ('tiny') or path to a .pt file,
+            # not a HuggingFace directory. It auto-downloads to ~/.cache/whisper/.
+            whisper_pt = BASE_DIR / "models" / "whisper" / "tiny.pt"
+            whisper_arg = str(whisper_pt) if whisper_pt.exists() else "tiny"
+            self.audio_processor = Audio2Feature(model_path=whisper_arg)
 
             self._loaded = True
             print("[MUSETALK] All models loaded and ready")
