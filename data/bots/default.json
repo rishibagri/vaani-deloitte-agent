@@ -1,0 +1,26 @@
+{
+  "company_name": "Deloitte",
+  "company_tagline": "DCIT · Avatar Systems",
+  "logo_url": null,
+  "primary_color": "#86BC25",
+  "agent_name": "Vaani",
+  "agent_role": "Your AI Assistant",
+  "agent_voice": "Puck",
+  "llm_model": "gemini-3.1-flash-live-preview",
+  "default_language": "en",
+  "supported_languages": [
+    "en",
+    "hi",
+    "ta",
+    "te",
+    "kn",
+    "ml",
+    "bn",
+    "ur"
+  ],
+  "system_prompt_extra": "",
+  "avatar_video_url": null,
+  "welcome_message": "",
+  "created_at": "2026-06-01T11:47:38Z",
+  "updated_at": "2026-06-01T11:47:38Z"
+}

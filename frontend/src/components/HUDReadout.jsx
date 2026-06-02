@@ -23,12 +23,13 @@ function Readout({ label, children, visible }) {
       pointerEvents: 'none',
     }}>
       <div style={{
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: 9,
-        letterSpacing: '0.12em',
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        marginBottom: 3,
+        fontWeight: 500,
+        letterSpacing: '0.04em',
+        color: 'rgba(139,163,199,0.55)',
+        marginBottom: 2,
+        textTransform: 'none',
       }}>
         {label}
       </div>
@@ -100,52 +101,50 @@ export function HUDReadout({
       }}
     >
       {position === 'top-left' && (
-        <Readout label="SESSION" visible={visible}>
+        <Readout label="Session" visible={visible}>
           <HUDTimer running={sessionRunning} />
         </Readout>
       )}
 
       {position === 'top-right' && (
-        <Readout label="LANGUAGE" visible={visible}>
+        <Readout label="Language" visible={visible}>
           <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 13,
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 12,
+            fontWeight: 500,
             color: 'var(--text-secondary)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
+            letterSpacing: '0.01em',
           }}>
-            {currentLang?.toUpperCase() || 'EN'}&nbsp;
-            <span style={{ fontSize: 10, opacity: 0.7, letterSpacing: 0 }}>
-              {LANG_NAMES[currentLang] || 'English'}
-            </span>
+            {LANG_NAMES[currentLang] || 'English'}
           </span>
         </Readout>
       )}
 
       {position === 'bottom-left' && (
-        <Readout label="MODEL" visible={visible}>
+        <Readout label="Model" visible={visible}>
           <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'Inter', sans-serif",
             fontSize: 11,
+            fontWeight: 500,
             color: 'var(--text-secondary)',
-            letterSpacing: '0.02em',
+            letterSpacing: '0.01em',
           }}>
-            GEMINI LIVE 3.1
+            Gemini Live 3.1
           </span>
         </Readout>
       )}
 
       {position === 'bottom-right' && (
-        <Readout label="STATUS" visible={visible}>
+        <Readout label="Status" visible={visible}>
           <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'Inter', sans-serif",
             fontSize: 11,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
+            fontWeight: 500,
+            letterSpacing: '0.01em',
             color: STATE_COLOR[appState] || STATE_COLOR.idle,
             transition: 'color 400ms var(--ease-standard)',
           }}>
-            {appState?.toUpperCase() || 'IDLE'}
+            {appState ? appState.charAt(0).toUpperCase() + appState.slice(1) : 'Idle'}
           </span>
         </Readout>
       )}

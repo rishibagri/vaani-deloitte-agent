@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 
-const LANG_NAMES = {
-  en: 'EN', hi: 'HI', ta: 'TA', te: 'TE', kn: 'KN',
-  ml: 'ML', bn: 'BN', gu: 'GU', mr: 'MR', pa: 'PA', ur: 'UR',
-}
-
 /* Word stagger: builds a growing list of word items,
    animating only newly appended words. */
 function useWordItems(text) {
@@ -36,7 +31,6 @@ function useWordItems(text) {
         })),
       ])
     } else if (!curr.startsWith(prev)) {
-      // Reset — new turn
       setItems(currWords.map((word, i) => ({
         id: i, word, isNew: true, delay: i * 40,
       })))
@@ -54,7 +48,6 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
   const [visible,  setVisible]  = useState(false)
   const hideTimer  = useRef(null)
   const wordItems  = useWordItems(agentText || '')
-  const langCode   = LANG_NAMES[currentLang] || 'EN'
 
   /* Mount then animate in */
   useEffect(() => {
@@ -62,8 +55,6 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
       clearTimeout(hideTimer.current)
       if (!mounted) setMounted(true)
       requestAnimationFrame(() => setVisible(true))
-    } else {
-      /* No content — nothing to show yet */
     }
   }, [hasContent, mounted])
 
@@ -91,121 +82,93 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
         bottom: 24,
         left: '50%',
         zIndex: 'var(--z-transcript)',
-        width: 'min(680px, 90vw)',
-        background: 'rgba(1,33,105,0.60)',
-        backdropFilter: 'blur(24px) saturate(1.5)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
-        borderTop: '2px solid #86BC25',
-        borderRight: '1px solid rgba(255,255,255,0.08)',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        borderLeft: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '0 0 20px 20px',
-        padding: '14px 20px 16px',
+        width: 'min(660px, 90vw)',
+        background: 'rgba(1,15,38,0.72)',
+        backdropFilter: 'blur(28px) saturate(1.6)',
+        WebkitBackdropFilter: 'blur(28px) saturate(1.6)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderTop: '1.5px solid rgba(134,188,37,0.45)',
+        borderRadius: 16,
+        padding: '16px 20px 18px',
         opacity: visible ? 1 : 0,
         transform: visible
           ? 'translateX(-50%) translateY(0)'
-          : 'translateX(-50%) translateY(20px)',
-        transition: 'opacity 300ms var(--ease-out-quart), transform 300ms var(--ease-out-quart)',
+          : 'translateX(-50%) translateY(16px)',
+        transition: 'opacity 280ms var(--ease-out-quart), transform 280ms var(--ease-out-quart)',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.45)',
       }}
     >
-      {/* Top bar */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 10,
-      }}>
-        {isStreaming && (
-          <div style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: '#86BC25',
-            flexShrink: 0,
-            animation: 'dot-pulse 1200ms ease-in-out infinite',
-          }} />
-        )}
-        <span style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 9,
-          letterSpacing: '0.12em',
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          flex: 1,
-        }}>
-          {isStreaming ? 'VAANI SPEAKING' : 'VAANI'}
-        </span>
-        <span style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 9,
-          letterSpacing: '0.08em',
-          color: 'var(--text-muted)',
-        }}>
-          {langCode}
-        </span>
-      </div>
-
-      {/* Agent response text with word stagger */}
+      {/* Agent text */}
       {(agentText || wordItems.length > 0) && (
-        <p style={{
-          margin: 0,
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 15,
-          lineHeight: 1.7,
-          color: 'var(--text-primary)',
-          textWrap: 'pretty',
-        }}>
-          {wordItems.map(item => (
-            <span
-              key={item.id}
-              style={{
-                display: 'inline',
-                animation: item.isNew
-                  ? `word-in 200ms var(--ease-out-quart) ${item.delay}ms both`
-                  : 'none',
-              }}
-            >
-              {item.word}{' '}
-            </span>
-          ))}
-          {/* Streaming cursor */}
-          {isStreaming && (
-            <span
-              aria-hidden="true"
-              style={{
-                display: 'inline-block',
-                width: 2,
-                height: 14,
-                background: 'var(--brand-blue)',
-                borderRadius: 1,
-                verticalAlign: 'middle',
-                marginLeft: 2,
-                animation: 'cursor-blink 700ms steps(1) infinite',
-              }}
-            />
-          )}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          {/* Avatar dot */}
+          <div style={{
+            width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+            background: 'rgba(134,188,37,0.15)', border: '1.5px solid rgba(134,188,37,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {isStreaming ? (
+              <div style={{
+                width: 6, height: 6, borderRadius: '50%', background: 'var(--green)',
+                animation: 'dot-pulse 900ms ease-in-out infinite',
+              }} />
+            ) : (
+              <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 10, color: 'var(--green)', lineHeight: 1 }}>V</span>
+            )}
+          </div>
+
+          <p style={{
+            margin: 0,
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 15,
+            lineHeight: 1.65,
+            color: 'var(--text-primary)',
+            textWrap: 'pretty',
+            flex: 1,
+          }}>
+            {wordItems.map(item => (
+              <span
+                key={item.id}
+                style={{
+                  display: 'inline',
+                  animation: item.isNew
+                    ? `word-in 200ms var(--ease-out-quart) ${item.delay}ms both`
+                    : 'none',
+                }}
+              >
+                {item.word}{' '}
+              </span>
+            ))}
+            {isStreaming && (
+              <span
+                aria-hidden="true"
+                style={{
+                  display: 'inline-block',
+                  width: 2,
+                  height: 13,
+                  background: 'var(--brand-blue)',
+                  borderRadius: 1,
+                  verticalAlign: 'middle',
+                  marginLeft: 2,
+                  animation: 'cursor-blink 700ms steps(1) infinite',
+                }}
+              />
+            )}
+          </p>
+        </div>
       )}
 
       {/* User text */}
       {userText && (
         <p style={{
-          margin: '10px 0 0',
+          margin: agentText ? '10px 0 0 34px' : '0 0 0 34px',
           fontFamily: "'Inter', sans-serif",
-          fontSize: 12,
+          fontSize: 13,
           lineHeight: 1.5,
           color: 'var(--text-secondary)',
           fontStyle: 'italic',
-          opacity: 0.75,
+          opacity: 0.8,
         }}>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 9,
-            letterSpacing: '0.1em',
-            fontStyle: 'normal',
-            color: 'var(--text-muted)',
-            marginRight: 6,
-          }}>YOU</span>
           {userText}
         </p>
       )}

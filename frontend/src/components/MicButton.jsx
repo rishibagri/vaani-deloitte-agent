@@ -164,21 +164,21 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
         </button>
       </div>
 
-      {/* HOLD SPACE label — disappears after first use */}
+      {/* Hint — disappears after first use */}
       {showLabel && !isRecording && (
         <span
           aria-hidden="true"
           style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 9,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 11,
+            fontWeight: 400,
             color: 'var(--text-muted)',
-            opacity: 0.85,
+            opacity: 0.7,
             userSelect: 'none',
+            letterSpacing: '0.01em',
           }}
         >
-          HOLD SPACE TO ACTIVATE
+          Hold space to speak
         </span>
       )}
     </div>

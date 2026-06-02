@@ -16,10 +16,35 @@ import { StatusBadge }        from './components/StatusBadge'
 import { QuickReplies }       from './components/QuickReplies'
 import { ToastContainer, toast } from './components/ToastContainer'
 import { NameCollectionOverlay } from './components/NameCollectionOverlay'
+import { AdminLogin }         from './components/AdminLogin'
+import { AdminDashboard }     from './components/AdminDashboard'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
-export default function App() {
+// ── Admin shell ───────────────────────────────────────────────────────────────
+function AdminShell() {
+  const [token, setToken] = useState(() => sessionStorage.getItem('vaani_admin_token'))
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('vaani_admin_token')
+    setToken(null)
+  }
+
+  if (!token) {
+    return (
+      <AdminLogin
+        onSuccess={(t) => {
+          sessionStorage.setItem('vaani_admin_token', t)
+          setToken(t)
+        }}
+      />
+    )
+  }
+  return <AdminDashboard token={token} onLogout={handleLogout} />
+}
+
+// ── Main app — extracted so hooks are never conditional ───────────────────────
+function MainApp() {
   const [bootDone,       setBootDone]       = useState(false)
   const [sessionId,      setSessionId]      = useState(null)
   const [appState,       setAppState]       = useState('idle')
@@ -28,7 +53,7 @@ export default function App() {
   const [suggestions,    setSuggestions]    = useState([])
   const [showSuggestions,setShowSuggestions]= useState(false)
   const [sessionRunning, setSessionRunning] = useState(false)
-  const [geminiReady,   setGeminiReady]    = useState(false)
+  const [geminiReady,    setGeminiReady]    = useState(false)
 
   /* face ID */
   const [identityReady,  setIdentityReady]  = useState(false)
@@ -141,9 +166,9 @@ export default function App() {
     })
       .then(r => r.json())
       .then(data => {
-        if (data.enrolled)           toast(`Nice to meet you, ${data.name}!`)
-        else if (data.reason === 'no_face_detected') toast('No face detected — memory not saved', 'error')
-        else if (data.reason?.startsWith('db'))      toast('Memory unavailable', 'error')
+        if (data.enrolled)                               toast(`Nice to meet you, ${data.name}!`)
+        else if (data.reason === 'no_face_detected')     toast('No face detected — memory not saved', 'error')
+        else if (data.reason?.startsWith('db'))          toast('Memory unavailable', 'error')
       })
       .catch(() => toast('Enrollment failed', 'error'))
       .finally(() => setIdentityReady(true))
@@ -168,8 +193,8 @@ export default function App() {
   const lastAgentMsg = messages.length > 0 && messages[messages.length - 1].role === 'agent'
     ? messages[messages.length - 1].text
     : ''
-  const agentText  = agentStreamBuffer || lastAgentMsg
-  const isStreaming = !!agentStreamBuffer
+  const agentText   = agentStreamBuffer || lastAgentMsg
+  const isStreaming  = !!agentStreamBuffer
 
   const userFinalText = messages.length > 0 && messages[messages.length - 1].role === 'user'
     ? messages[messages.length - 1].text
@@ -180,15 +205,12 @@ export default function App() {
 
   return (
     <>
-      {/* Particle canvas + background + corner brackets */}
       <ParticleCanvas appState={appState} />
 
-      {/* Boot sequence — shows once per browser session */}
       {!bootDone && (
         <BootSequence onComplete={() => setBootDone(true)} />
       )}
 
-      {/* Header */}
       <Header
         connected={connected}
         onLanguageChange={handleLanguageChange}
@@ -196,7 +218,6 @@ export default function App() {
         sessionRunning={sessionRunning}
       />
 
-      {/* Main stage */}
       <main
         role="main"
         style={{
@@ -223,7 +244,6 @@ export default function App() {
             onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
           />
 
-          {/* HUD readouts — hidden on mobile via CSS */}
           <div style={{ display: 'contents' }} className="hud-layer">
             <HUDReadout position="top-left"     appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
             <HUDReadout position="top-right"    appState={appState} currentLang={detectedLanguage?.code || currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
@@ -232,10 +252,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Status badge */}
         <StatusBadge appState={appState} />
 
-        {/* Mic button */}
         <MicButton
           isRecording={isRecording}
           isDisabled={!geminiReady || appState === 'thinking' || connected !== 'connected'}
@@ -244,7 +262,6 @@ export default function App() {
           appState={appState}
         />
 
-        {/* Suggestions */}
         <QuickReplies
           suggestions={suggestions}
           onSelect={handleQuickReply}
@@ -252,7 +269,6 @@ export default function App() {
         />
       </main>
 
-      {/* Transcript overlay */}
       <TranscriptOverlay
         agentText={agentText}
         isStreaming={isStreaming}
@@ -269,17 +285,27 @@ export default function App() {
         />
       )}
 
-      {/* Mobile HUD hide */}
       <style>{`
         @media (max-width: 768px) {
           .hud-layer > * { display: none !important; }
         }
         @media (max-width: 520px) {
-          :root {
-            --avatar-size: var(--avatar-size-mobile);
-          }
+          :root { --avatar-size: var(--avatar-size-mobile); }
         }
       `}</style>
     </>
   )
+}
+
+// ── Router ────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [isAdmin, setIsAdmin] = useState(() => window.location.hash === '#admin')
+
+  useEffect(() => {
+    const onHash = () => setIsAdmin(window.location.hash === '#admin')
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  return isAdmin ? <AdminShell /> : <MainApp />
 }

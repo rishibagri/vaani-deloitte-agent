@@ -1,25 +1,25 @@
 const STATE_CONFIG = {
-  idle:      { label: 'READY',         color: 'var(--state-idle)',      pulse: false },
-  listening: { label: 'LISTENING',     color: 'var(--state-listening)', pulse: true  },
-  thinking:  { label: 'THINKING',      color: 'var(--state-thinking)',  pulse: true  },
-  speaking:  { label: 'SPEAKING',      color: 'var(--state-speaking)',  pulse: true  },
-  error:     { label: 'DISCONNECTED',  color: 'var(--state-error)',     pulse: false },
+  idle:      { label: 'Ready',          color: 'var(--state-idle)',      pulse: false },
+  listening: { label: 'Listening',      color: 'var(--state-listening)', pulse: true  },
+  thinking:  { label: 'Thinking',       color: 'var(--state-thinking)',  pulse: true  },
+  speaking:  { label: 'Speaking',       color: 'var(--state-speaking)',  pulse: true  },
+  error:     { label: 'Offline',        color: 'var(--state-error)',     pulse: false },
 }
 
 const BG = {
-  idle:      'rgba(61,90,138,0.08)',
-  listening: 'rgba(134,188,37,0.08)',
-  thinking:  'rgba(245,166,35,0.08)',
-  speaking:  'rgba(0,163,224,0.08)',
-  error:     'rgba(255,68,68,0.08)',
+  idle:      'rgba(61,90,138,0.07)',
+  listening: 'rgba(134,188,37,0.07)',
+  thinking:  'rgba(245,166,35,0.07)',
+  speaking:  'rgba(0,163,224,0.07)',
+  error:     'rgba(255,68,68,0.07)',
 }
 
 const BORDER = {
-  idle:      'rgba(61,90,138,0.18)',
-  listening: 'rgba(134,188,37,0.22)',
-  thinking:  'rgba(245,166,35,0.20)',
-  speaking:  'rgba(0,163,224,0.20)',
-  error:     'rgba(255,68,68,0.22)',
+  idle:      'rgba(61,90,138,0.15)',
+  listening: 'rgba(134,188,37,0.20)',
+  thinking:  'rgba(245,166,35,0.18)',
+  speaking:  'rgba(0,163,224,0.18)',
+  error:     'rgba(255,68,68,0.20)',
 }
 
 export function StatusBadge({ appState }) {
@@ -31,7 +31,7 @@ export function StatusBadge({ appState }) {
     <div
       role="status"
       aria-live="polite"
-      aria-label={`Vaani status: ${cfg.label}`}
+      aria-label={`Vaani: ${cfg.label}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -55,9 +55,10 @@ export function StatusBadge({ appState }) {
         }}
       />
       <span style={{
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 10,
-        letterSpacing: '0.10em',
+        fontFamily: "'Inter', sans-serif",
+        fontSize: 12,
+        fontWeight: 500,
+        letterSpacing: '0.01em',
         color: cfg.color,
         transition: `color 400ms var(--ease-standard)`,
       }}>

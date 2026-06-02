@@ -44,7 +44,7 @@ class FaceMemory:
                     id                 SERIAL PRIMARY KEY,
                     name               VARCHAR(255) NOT NULL,
                     role               VARCHAR(255),
-                    face_encoding      FLOAT8[]    NOT NULL,
+                    face_encoding      FLOAT8[],
                     preferred_language VARCHAR(10) DEFAULT 'en',
                     visit_count        INTEGER DEFAULT 1,
                     created_at         TIMESTAMPTZ DEFAULT NOW(),
@@ -52,7 +52,7 @@ class FaceMemory:
                 );
                 CREATE TABLE IF NOT EXISTS vaani_sessions (
                     id         SERIAL PRIMARY KEY,
-                    user_id    INTEGER REFERENCES vaani_users(id) ON DELETE SET NULL,
+                    user_id    INTEGER REFERENCES vaani_users(id) ON DELETE CASCADE,
                     session_id VARCHAR(255) UNIQUE NOT NULL,
                     summary    TEXT,
                     language   VARCHAR(10) DEFAULT 'en',
@@ -61,6 +61,18 @@ class FaceMemory:
                 CREATE INDEX IF NOT EXISTS idx_vaani_sessions_user
                     ON vaani_sessions(user_id);
             """)
+            # Non-destructive migrations for multi-tenant + admin features
+            cur.execute("""
+                ALTER TABLE vaani_users
+                    ADD COLUMN IF NOT EXISTS company_id VARCHAR(255) DEFAULT 'default';
+                UPDATE vaani_users SET company_id = 'default' WHERE company_id IS NULL;
+                ALTER TABLE vaani_sessions
+                    ADD COLUMN IF NOT EXISTS transcript TEXT;
+            """)
+            try:
+                cur.execute("ALTER TABLE vaani_users ALTER COLUMN face_encoding DROP NOT NULL;")
+            except Exception:
+                pass  # already nullable or does not apply
             self._conn.commit()
 
     # ── image helpers ──────────────────────────────────────────────────────────
@@ -98,6 +110,8 @@ class FaceMemory:
         with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM vaani_users")
             users = cur.fetchall()
+
+        users = [u for u in users if u.get("face_encoding")]  # skip profile-only users
 
         if not users:
             return None
@@ -206,3 +220,100 @@ class FaceMemory:
                 (language, user_id),
             )
             self._conn.commit()
+
+    # ── admin helpers ──────────────────────────────────────────────────────────
+
+    def validate_face(self, image_data: "str | bytes") -> dict:
+        """Check if a face is detectable in the image."""
+        if not _FR_AVAILABLE:
+            return {"valid": False, "reason": "face_recognition_unavailable"}
+        encoding = self._extract_encoding(image_data)
+        if encoding is None:
+            return {"valid": False, "reason": "no_face_detected"}
+        return {"valid": True}
+
+    def list_users(self) -> list:
+        """Return all enrolled users without face encodings."""
+        if not self.connected:
+            return []
+        try:
+            with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, name, role,
+                           COALESCE(company_id, 'default') AS company_id,
+                           preferred_language, visit_count, created_at, last_seen
+                    FROM vaani_users
+                    ORDER BY last_seen DESC NULLS LAST
+                """)
+                return [dict(r) for r in cur.fetchall()]
+        except Exception as e:
+            logging.error(f"[MEMORY] list_users error: {e}")
+            return []
+
+    def add_user(
+        self,
+        name: str,
+        role: Optional[str] = None,
+        language: str = "en",
+        company_id: str = "default",
+        image_data: Optional["str | bytes"] = None,
+    ) -> Optional[dict]:
+        """Add a user profile, optionally with a face encoding."""
+        if not self.connected:
+            return None
+        encoding = None
+        if image_data:
+            encoding = self._extract_encoding(image_data)
+            if encoding is None:
+                return None  # image provided but no face found
+        try:
+            with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """INSERT INTO vaani_users
+                           (name, role, face_encoding, preferred_language, company_id)
+                       VALUES (%s, %s, %s, %s, %s)
+                       RETURNING id, name, role, preferred_language, visit_count, created_at, last_seen""",
+                    (name, role, encoding, language, company_id),
+                )
+                user = dict(cur.fetchone())
+                self._conn.commit()
+                user["company_id"] = company_id
+                return user
+        except Exception as e:
+            logging.error(f"[MEMORY] add_user error: {e}")
+            self._conn.rollback()
+            return None
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user and cascade to their sessions."""
+        if not self.connected:
+            return False
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("DELETE FROM vaani_users WHERE id=%s", (user_id,))
+                deleted = cur.rowcount > 0
+                self._conn.commit()
+            return deleted
+        except Exception as e:
+            logging.error(f"[MEMORY] delete_user error: {e}")
+            self._conn.rollback()
+            return False
+
+    def get_user_sessions(self, user_id: int) -> list:
+        """Return conversation sessions for a user, newest first."""
+        if not self.connected:
+            return []
+        try:
+            with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """SELECT id, session_id, summary, language, created_at,
+                              COALESCE(transcript, '') AS transcript
+                       FROM vaani_sessions
+                       WHERE user_id=%s
+                       ORDER BY created_at DESC""",
+                    (user_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        except Exception as e:
+            logging.error(f"[MEMORY] get_user_sessions error: {e}")
+            return []

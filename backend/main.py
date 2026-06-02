@@ -1,14 +1,16 @@
 import asyncio
+import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header as HTTPHeader, HTTPException, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response as FastResponse
 from pydantic import BaseModel
 
-from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMORY_ENABLED, DATABASE_URL
+from config import validate, CORS_ORIGINS, MUSETALK_ENABLED, BACKEND_PORT, MEMORY_ENABLED, DATABASE_URL, GEMINI_API_KEY
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
 from pipeline import SessionPipeline
@@ -219,6 +221,201 @@ def _gpu_available() -> bool:
         return torch.cuda.is_available()
     except ImportError:
         return False
+
+
+# ── Admin auth ────────────────────────────────────────────────────────────────
+
+_admin_tokens: dict[str, float] = {}
+_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "vaani_admin_2024")
+_TOKEN_TTL = 8 * 3600  # 8 hours
+
+
+def _require_admin(authorization: Optional[str] = HTTPHeader(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = authorization[7:]
+    expires = _admin_tokens.get(token)
+    if not expires or time.time() > expires:
+        _admin_tokens.pop(token, None)
+        raise HTTPException(status_code=401, detail="Token expired or invalid")
+    return token
+
+
+class _AdminLoginBody(BaseModel):
+    password: str
+
+
+@app.post("/admin/login")
+async def admin_login(body: _AdminLoginBody):
+    if body.password != _ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    token = str(uuid.uuid4())
+    _admin_tokens[token] = time.time() + _TOKEN_TTL
+    return {"token": token}
+
+
+@app.get("/config")
+async def get_config():
+    from bot_config import public_view
+    return public_view()
+
+
+# ── Voice preview ─────────────────────────────────────────────────────────────
+
+@app.get("/admin/test-voice")
+async def test_voice_preview(
+    voice_name: str = Query(...),
+    text: str = Query("Hello! I am your interactive AI voice assistant. How does my voice sound?"),
+    _token: str = Depends(_require_admin),
+):
+    import base64
+    try:
+        from google import genai as _genai
+        from google.genai import types as _types
+    except ImportError:
+        raise HTTPException(status_code=500, detail="google-genai not installed")
+
+    try:
+        client = _genai.Client(api_key=GEMINI_API_KEY)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=text,
+            config=_types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=_types.SpeechConfig(
+                    voice_config=_types.VoiceConfig(
+                        prebuilt_voice_config=_types.PrebuiltVoiceConfig(voice_name=voice_name)
+                    )
+                ),
+            ),
+        )
+        audio_data = response.candidates[0].content.parts[0].inline_data.data
+        raw_bytes = base64.b64decode(audio_data)
+        return FastResponse(content=raw_bytes, media_type="audio/wav")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Voice preview failed: {e}")
+
+
+# ── Bot CRUD ──────────────────────────────────────────────────────────────────
+
+@app.get("/bots")
+async def list_bots_route(_token: str = Depends(_require_admin)):
+    from bot_config import list_bots, get_active_slug
+    bots = list_bots()
+    active = get_active_slug()
+    for b in bots:
+        b["active"] = b["id"] == active
+    return bots
+
+
+@app.post("/bots")
+async def create_bot_route(request: Request, _token: str = Depends(_require_admin)):
+    from bot_config import create_bot
+    data = await request.json()
+    return create_bot(data)
+
+
+@app.get("/bots/{slug}")
+async def get_bot_route(slug: str, _token: str = Depends(_require_admin)):
+    from bot_config import get_bot
+    bot = get_bot(slug)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return bot
+
+
+@app.put("/bots/{slug}")
+async def update_bot_route(slug: str, request: Request, _token: str = Depends(_require_admin)):
+    from bot_config import update_bot
+    updates = await request.json()
+    bot = update_bot(slug, updates)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return bot
+
+
+@app.delete("/bots/{slug}")
+async def delete_bot_route(slug: str, _token: str = Depends(_require_admin)):
+    from bot_config import delete_bot
+    if not delete_bot(slug):
+        raise HTTPException(status_code=400, detail="Cannot delete this bot")
+    return {"deleted": True}
+
+
+@app.post("/bots/{slug}/activate")
+async def activate_bot_route(slug: str, _token: str = Depends(_require_admin)):
+    from bot_config import set_active
+    if not set_active(slug):
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return {"active": slug}
+
+
+# ── Admin user management ─────────────────────────────────────────────────────
+
+class _ValidateFaceBody(BaseModel):
+    image: str
+
+
+class _AddUserBody(BaseModel):
+    name: str
+    role: Optional[str] = None
+    company_id: str = "default"
+    image: Optional[str] = None
+
+
+@app.post("/admin/users/validate-face")
+async def validate_face_route(body: _ValidateFaceBody, _token: str = Depends(_require_admin)):
+    if face_memory is None or not face_memory.available:
+        return {"valid": False, "reason": "face_recognition_unavailable"}
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, face_memory.validate_face, body.image)
+    return result
+
+
+@app.get("/admin/users")
+async def list_users_route(_token: str = Depends(_require_admin)):
+    if face_memory is None or not face_memory.connected:
+        return []
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, face_memory.list_users)
+
+
+@app.post("/admin/users")
+async def add_user_route(body: _AddUserBody, _token: str = Depends(_require_admin)):
+    if face_memory is None or not face_memory.connected:
+        raise HTTPException(status_code=503, detail="Memory layer unavailable")
+    loop = asyncio.get_event_loop()
+    user = await loop.run_in_executor(
+        None,
+        lambda: face_memory.add_user(
+            name=body.name,
+            role=body.role,
+            company_id=body.company_id,
+            image_data=body.image,
+        ),
+    )
+    if user is None:
+        raise HTTPException(status_code=400, detail="no_face_detected" if body.image else "enrollment_failed")
+    return user
+
+
+@app.delete("/admin/users/{user_id}")
+async def delete_user_route(user_id: int, _token: str = Depends(_require_admin)):
+    if face_memory is None or not face_memory.connected:
+        raise HTTPException(status_code=503, detail="Memory layer unavailable")
+    loop = asyncio.get_event_loop()
+    deleted = await loop.run_in_executor(None, face_memory.delete_user, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"deleted": True}
+
+
+@app.get("/admin/users/{user_id}/sessions")
+async def get_user_sessions_route(user_id: int, _token: str = Depends(_require_admin)):
+    if face_memory is None or not face_memory.connected:
+        return []
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, face_memory.get_user_sessions, user_id)
 
 
 if __name__ == "__main__":

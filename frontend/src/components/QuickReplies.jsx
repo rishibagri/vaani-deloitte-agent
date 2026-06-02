@@ -3,18 +3,38 @@ export function QuickReplies({ suggestions, onSelect, visible }) {
   return (
     <div style={{
       display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center',
-      marginTop: 4
+      marginTop: 4,
     }}>
       {suggestions.map((text, i) => (
-        <button key={i} onClick={() => onSelect(text)} style={{
-          background: 'rgba(0,163,224,0.08)',
-          border: '1px solid rgba(0,163,224,0.22)',
-          borderRadius: 'var(--radius-full)',
-          padding: '6px 14px', cursor: 'pointer',
-          color: 'var(--text-blue)', fontSize: 13,
-          animation: `quick-reply-enter 300ms var(--ease-enter) ${i * 60}ms both`,
-          whiteSpace: 'nowrap'
-        }}>
+        <button
+          key={i}
+          onClick={() => onSelect(text)}
+          style={{
+            background: 'rgba(134,188,37,0.06)',
+            border: '1px solid rgba(134,188,37,0.20)',
+            borderRadius: 'var(--radius-full)',
+            padding: '7px 16px',
+            cursor: 'pointer',
+            color: 'rgba(134,188,37,0.85)',
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            fontWeight: 400,
+            letterSpacing: '0.01em',
+            animation: `quick-reply-enter 300ms var(--ease-enter) ${i * 60}ms both`,
+            whiteSpace: 'nowrap',
+            transition: 'background 150ms, border-color 150ms, color 150ms',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(134,188,37,0.12)'
+            e.currentTarget.style.borderColor = 'rgba(134,188,37,0.35)'
+            e.currentTarget.style.color = 'var(--green)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(134,188,37,0.06)'
+            e.currentTarget.style.borderColor = 'rgba(134,188,37,0.20)'
+            e.currentTarget.style.color = 'rgba(134,188,37,0.85)'
+          }}
+        >
           {text}
         </button>
       ))}

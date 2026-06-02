@@ -191,29 +191,56 @@ export function Header({
           )}
         </div>
 
-        {/* Connection dot */}
+        {/* Connection dot — subtle, no text label */}
         <div
           role="status"
           aria-live="polite"
           aria-label={`Connection: ${connLabel}`}
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          title={connLabel}
+          style={{ display: 'flex', alignItems: 'center' }}
         >
           <div style={{
-            width: 6, height: 6, borderRadius: '50%',
+            width: 7, height: 7, borderRadius: '50%',
             background: dotColor,
             flexShrink: 0,
             animation: connected === 'connecting' ? 'dot-pulse 1200ms ease-in-out infinite' : 'none',
             transition: 'background 400ms var(--ease-standard)',
+            boxShadow: connected === 'connected' ? `0 0 6px ${dotColor}66` : 'none',
           }} />
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            letterSpacing: '0.06em',
-            color: 'var(--text-muted)',
-          }}>
-            {connLabel.toUpperCase()}
-          </span>
         </div>
+
+        {/* Admin gear */}
+        <button
+          onClick={() => { window.location.hash = 'admin' }}
+          aria-label="Admin settings"
+          title="Admin"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 'var(--radius-md)',
+            background: 'none', border: '1px solid rgba(255,255,255,0.07)',
+            color: 'var(--text-muted)', cursor: 'pointer',
+            transition: 'color 150ms, border-color 150ms, background 150ms',
+            outline: 'none',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.color = 'var(--text-secondary)'
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.14)'
+            e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.color = 'var(--text-muted)'
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
+            e.currentTarget.style.background = 'none'
+          }}
+          onFocus={e => { e.currentTarget.style.boxShadow = '0 0 0 2px rgba(0,163,224,0.35)' }}
+          onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
       </div>
     </header>
   )
