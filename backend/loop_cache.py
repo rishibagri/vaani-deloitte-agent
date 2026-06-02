@@ -60,7 +60,7 @@ class LoopCache:
             import os
             from musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs
             _old_cwd = os.getcwd()
-            os.chdir(str(BASE_DIR))
+            os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
             try:
                 coords, frame_list = get_landmark_and_bbox(raw_frames, bbox_shift=0)
             finally:

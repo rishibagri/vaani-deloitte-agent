@@ -1,6 +1,8 @@
 import asyncio
 import os
 import sys
+import wave
+import tempfile
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -26,9 +28,8 @@ class MuseTalkModel:
     def __init__(self):
         self.device          = None
         self.vae             = None
-        self.unet            = None
+        self.unet            = None  # MuseTalk UNet wrapper; real model at self.unet.model
         self.audio_processor = None
-        self.pe              = None
         self._loaded         = False
         self._executor       = ThreadPoolExecutor(max_workers=1)
 
@@ -39,7 +40,7 @@ class MuseTalkModel:
 
         _setup_path()
         _old_cwd = os.getcwd()
-        os.chdir(str(BASE_DIR))
+        os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
 
         try:
             import torch
@@ -49,7 +50,7 @@ class MuseTalkModel:
             print(f"[MUSETALK] Loading models on {self.device}...")
 
             from diffusers import AutoencoderKL
-            from musetalk.models.unet import UNet, PositionalEncoding
+            from musetalk.models.unet import UNet
             from musetalk.whisper.audio2feature import Audio2Feature
 
             # SD VAE — encodes/decodes face images to/from latent space
@@ -58,18 +59,14 @@ class MuseTalkModel:
             self.vae.requires_grad_(False)
             self.vae.eval()
 
-            # MuseTalk UNet V1.5 — takes file paths, handles device internally
+            # MuseTalk UNet V1.5 wrapper — real nn.Module lives at self.unet.model
+            # UNet also contains its own PositionalEncoding at self.unet.pe
             self.unet = UNet(
                 unet_config=str(MUSETALK_UNET_CFG),
                 model_path=str(MUSETALK_UNET_PATH),
             )
 
-            # Positional encoding for audio feature sequences
-            self.pe = PositionalEncoding(d_model=384)
-
-            # Whisper-based audio feature extractor
-            # openai-whisper expects a model name ('tiny') or path to a .pt file,
-            # not a HuggingFace directory. It auto-downloads to ~/.cache/whisper/.
+            # Whisper-based audio feature extractor (MuseTalk's bundled whisper fork)
             whisper_pt = BASE_DIR / "models" / "whisper" / "tiny.pt"
             whisper_arg = str(whisper_pt) if whisper_pt.exists() else "tiny"
             self.audio_processor = Audio2Feature(model_path=whisper_arg)
@@ -90,15 +87,28 @@ class MuseTalkModel:
         import cv2
 
         _old_cwd = os.getcwd()
-        os.chdir(str(BASE_DIR))
+        os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
 
         try:
-            from musetalk.utils.blending import get_image_prepare_material, get_image_blending
+            # Write PCM bytes to a temp WAV — audio2feat() needs a file path
+            tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            tmp.close()
+            try:
+                with wave.open(tmp.name, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)   # int16 = 2 bytes
+                    wf.setframerate(16000)
+                    wf.writeframes(audio_bytes_16k)
+                audio_feat    = self.audio_processor.audio2feat(tmp.name)
+                audio_chunks  = self.audio_processor.feature2chunks(audio_feat, fps=25)
+            finally:
+                try:
+                    os.unlink(tmp.name)
+                except Exception:
+                    pass
 
-            # Extract audio features via Whisper encoder
-            audio_array = np.frombuffer(audio_bytes_16k, dtype=np.int16).astype(np.float32) / 32767.0
-            audio_feat  = self.audio_processor.audio2feat_from_array(audio_array, sample_rate=16000)
-            audio_chunks = self.audio_processor.feature2chunks(audio_feat, fps=25)
+            if not audio_chunks:
+                return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
 
             n_frames = min(len(face_crops), len(audio_chunks))
             if n_frames == 0:
@@ -119,38 +129,30 @@ class MuseTalkModel:
                     face_tensor = (face_tensor / 127.5 - 1.0).unsqueeze(0).to(self.device)
                     latent      = self.vae.encode(face_tensor).latent_dist.sample() * 0.18215
 
-                    # Build UNet inputs
+                    # Audio embedding + positional encoding (via UNet's built-in PE)
                     audio_t = torch.from_numpy(audio_emb).float().unsqueeze(0).to(self.device)
+                    audio_t = self.unet.pe(audio_t)
                     ts      = torch.zeros(1, dtype=torch.long).to(self.device)
 
-                    # UNet forward pass — V1.5 may return tensor or object with .sample
-                    unet_out      = self.unet(latent, ts, encoder_hidden_states=audio_t)
-                    output_latent = unet_out.sample if hasattr(unet_out, "sample") else unet_out
+                    # UNet forward pass — call .model directly, UNet wrapper is not callable
+                    output_latent = self.unet.model(latent, ts, encoder_hidden_states=audio_t).sample
                     output_latent = output_latent / 0.18215
 
                     # Decode latent back to pixel space
                     decoded = self.vae.decode(output_latent).sample
-                    decoded = (decoded + 1.0) * 127.5
-                    decoded = decoded.squeeze(0).permute(1, 2, 0).clamp(0, 255)
+                    decoded = ((decoded + 1.0) * 127.5).squeeze(0).permute(1, 2, 0).clamp(0, 255)
                     generated_bgr = cv2.cvtColor(
                         decoded.cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR
                     )
                     generated_bgr = cv2.resize(generated_bgr, (256, 256))
 
-                    # Blend generated face back into the full frame
+                    # Paste generated face back into the full frame at the face bbox
                     result_frame = full_frame.copy()
                     if bbox is not None and len(bbox) >= 4:
                         x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                         face_h, face_w = y2 - y1, x2 - x1
                         if face_h > 0 and face_w > 0:
-                            try:
-                                mask, mask_img = get_image_prepare_material([face_bgr], 4)
-                                blended = get_image_blending(
-                                    generated_bgr, face_bgr, mask[0], mask_img[0]
-                                )
-                            except Exception:
-                                blended = generated_bgr
-                            result_frame[y1:y2, x1:x2] = cv2.resize(blended, (face_w, face_h))
+                            result_frame[y1:y2, x1:x2] = cv2.resize(generated_bgr, (face_w, face_h))
 
                     result_frames.append(cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB))
 

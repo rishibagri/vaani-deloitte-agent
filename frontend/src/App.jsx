@@ -249,6 +249,13 @@ function MainApp() {
 
   useEffect(() => { fetchConfig() }, [fetchConfig])
 
+  /* Fallback: force identityReady after 2s so camera permission dialog never blocks WS */
+  useEffect(() => {
+    if (identityReady) return
+    const t = setTimeout(() => setIdentityReady(true), 2000)
+    return () => clearTimeout(t)
+  }, [identityReady])
+
   /* Step 1 — create session */
   useEffect(() => {
     fetch(`${BACKEND_URL}/session`, { method: 'POST' })

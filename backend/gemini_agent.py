@@ -44,7 +44,9 @@ class GeminiAgent:
                     "prebuilt_voice_config": {"voice_name": voice or GEMINI_VOICE}
                 }
             },
-            "system_instruction": self._build_system_instruction(),
+            "system_instruction": {
+                "parts": [{"text": self._build_system_instruction()}]
+            },
         }
 
     async def start(self):
