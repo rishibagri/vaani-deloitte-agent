@@ -9,7 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 os.environ["MPLBACKEND"] = "Agg"
 
-from config import MUSETALK_DIR, MUSETALK_UNET_PATH, MUSETALK_UNET_CFG, MUSETALK_ENABLED, BASE_DIR
+from config import (
+    MUSETALK_DIR, MUSETALK_UNET_PATH, MUSETALK_UNET_CFG, MUSETALK_ENABLED, BASE_DIR,
+    MUSETALK_GPU_BATCH, MOUTH_SCALE, MOUTH_DX, MOUTH_DY, MUSETALK_FP16,
+)
 from audio_utils import encode_jpeg
 
 
@@ -63,21 +66,25 @@ class MuseTalkModel:
             from musetalk.utils.audio_processor import AudioProcessor
 
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            # Use float32 throughout to avoid half/float device-dtype mismatches.
-            self.weight_dtype = torch.float32
+            use_fp16 = MUSETALK_FP16 and torch.cuda.is_available()
+            self.weight_dtype = torch.float16 if use_fp16 else torch.float32
             if not torch.cuda.is_available():
                 print("[MUSETALK] No CUDA GPU - running on CPU (slow)")
-            print(f"[MUSETALK] Loading models on {self.device}...")
+            print(f"[MUSETALK] Loading models on {self.device} ({'fp16' if use_fp16 else 'fp32'})...")
 
             whisper_dir = str(BASE_DIR / "models" / "whisper")
 
             # VAE wrapper (encode/decode + 8-channel latent prep)
-            self.vae = VAE(model_path=str(BASE_DIR / "models" / "sd-vae"), use_float16=False)
+            self.vae = VAE(model_path=str(BASE_DIR / "models" / "sd-vae"), use_float16=use_fp16)
 
             # UNet V1.5 + positional encoding
             self.unet = UNet(unet_config=str(MUSETALK_UNET_CFG), model_path=str(MUSETALK_UNET_PATH))
-            self.unet.model = self.unet.model.to(self.device).eval()
+            self.unet.model = self.unet.model.to(self.device)
             self.pe = PositionalEncoding(d_model=384).to(self.device)
+            if use_fp16:
+                self.unet.model = self.unet.model.half()
+                self.pe = self.pe.half()
+            self.unet.model = self.unet.model.eval()
 
             # HuggingFace Whisper encoder + mel feature extractor
             self.audio_processor = AudioProcessor(feature_extractor_path=whisper_dir)
@@ -236,7 +243,7 @@ class MuseTalkModel:
 
             result_frames = []
             timesteps = torch.tensor([0], device=self.device)
-            BATCH = 8  # frames per UNet/VAE forward pass
+            BATCH = max(1, MUSETALK_GPU_BATCH)  # frames per UNet/VAE forward pass
 
             with torch.no_grad():
                 for start in range(0, n_frames, BATCH):
@@ -279,6 +286,20 @@ class MuseTalkModel:
                             face_h, face_w = y2 - y1, x2 - x1
                             if face_h > 0 and face_w > 0:
                                 gen = cv2.resize(generated_bgr, (face_w, face_h)).astype(np.float32)
+
+                                # Affine correction: scale about center + nudge, to
+                                # align the generated mouth with the real face geometry.
+                                if MOUTH_SCALE != 1.0 or MOUTH_DX != 0.0 or MOUTH_DY != 0.0:
+                                    cx, cy = face_w / 2.0, face_h / 2.0
+                                    s = MOUTH_SCALE
+                                    tx = cx - s * cx + MOUTH_DX * face_w
+                                    ty = cy - s * cy + MOUTH_DY * face_h
+                                    M = np.array([[s, 0, tx], [0, s, ty]], dtype=np.float32)
+                                    gen = cv2.warpAffine(
+                                        gen, M, (face_w, face_h),
+                                        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE,
+                                    )
+
                                 roi = result_frame[y1:y2, x1:x2].astype(np.float32)
                                 # Mouth-only feathered blend: keep original face,
                                 # swap only the lower mouth/jaw region.

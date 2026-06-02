@@ -33,6 +33,20 @@ MUSETALK_UNET_CFG  = BASE_DIR / "models" / "musetalkV15" / "musetalk.json"
 MUSETALK_VERSION   = os.getenv("MUSETALK_VERSION", "v15")
 
 BATCH_MS              = int(os.getenv("MUSETALK_BATCH_MS", 200))
+
+# MuseTalk GPU batch (frames per UNet/VAE forward pass) — higher = faster on
+# bigger GPUs, lower if you hit out-of-memory.
+MUSETALK_GPU_BATCH    = int(os.getenv("MUSETALK_GPU_BATCH", 16))
+
+# float16 inference — ~2x faster on GPU (MuseTalk's realtime default). Set
+# MUSETALK_FP16=false to fall back to float32 if you see artifacts/NaNs.
+MUSETALK_FP16         = os.getenv("MUSETALK_FP16", "true").strip().lower() == "true"
+
+# Mouth alignment correction (tune if the generated mouth is offset/scaled).
+# Fractions of the face-box size. Negative DX = shift left, negative DY = shift up.
+MOUTH_SCALE = float(os.getenv("MOUTH_SCALE", 0.95))   # <1 shrinks the generated mouth
+MOUTH_DX    = float(os.getenv("MOUTH_DX", -0.02))     # horizontal nudge
+MOUTH_DY    = float(os.getenv("MOUTH_DY", -0.03))     # vertical nudge
 SAMPLE_RATE_IN        = 16000
 SAMPLE_RATE_GEMINI_OUT = 24000
 SAMPLE_RATE_MUSETALK  = 16000
