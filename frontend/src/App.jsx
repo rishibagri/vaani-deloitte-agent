@@ -43,6 +43,133 @@ function AdminShell() {
   return <AdminDashboard token={token} onLogout={handleLogout} />
 }
 
+// ── Connecting overlay ────────────────────────────────────────────────────────
+const INIT_MSGS = [
+  'Initializing neural networks...',
+  'Loading voice synthesis engine...',
+  'Calibrating real-time inference...',
+  'Connecting to Gemini Live...',
+  'Preparing avatar pipeline...',
+  'Warming up language models...',
+  'Almost ready...',
+]
+
+function ConnectingOverlay() {
+  const [msgIdx, setMsgIdx] = useState(0)
+  const [fade,   setFade]   = useState(true)
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setFade(false)
+      setTimeout(() => {
+        setMsgIdx(i => (i + 1) % INIT_MSGS.length)
+        setFade(true)
+      }, 300)
+    }, 2400)
+    return () => clearInterval(cycle)
+  }, [])
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 400,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 32,
+      background: 'rgba(1,10,26,0.90)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+      pointerEvents: 'none',
+      animation: 'cv-fadein 500ms ease both',
+    }}>
+      {/* Brand */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10,
+          letterSpacing: '0.55em',
+          textTransform: 'uppercase',
+          color: '#86BC25',
+          paddingRight: '0.55em',
+        }}>DELOITTE</span>
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 8,
+          letterSpacing: '0.28em',
+          textTransform: 'uppercase',
+          color: 'rgba(61,90,138,0.70)',
+          paddingRight: '0.28em',
+        }}>VAANI // AVATAR INTELLIGENCE</span>
+      </div>
+
+      {/* Spinner ring */}
+      <div style={{ position: 'relative', width: 64, height: 64 }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          borderRadius: '50%',
+          border: '1.5px solid rgba(134,188,37,0.12)',
+          borderTopColor: '#86BC25',
+          animation: 'cv-spin 1000ms linear infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: 8,
+          borderRadius: '50%',
+          border: '1px solid rgba(0,163,224,0.10)',
+          borderBottomColor: 'rgba(0,163,224,0.50)',
+          animation: 'cv-spin-rev 1600ms linear infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            width: 6, height: 6,
+            borderRadius: '50%',
+            background: '#86BC25',
+            animation: 'cv-pulse 1200ms ease-in-out infinite',
+            boxShadow: '0 0 8px rgba(134,188,37,0.6)',
+          }} />
+        </div>
+      </div>
+
+      {/* Cycling status message */}
+      <div style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 10,
+        letterSpacing: '0.08em',
+        color: 'rgba(255,255,255,0.38)',
+        textTransform: 'uppercase',
+        opacity: fade ? 1 : 0,
+        transition: 'opacity 300ms ease',
+        minHeight: 16,
+        paddingRight: '0.08em',
+      }}>
+        {INIT_MSGS[msgIdx]}
+      </div>
+
+      {/* Progress bar — slow pulse */}
+      <div style={{ width: 180, height: 1, background: 'rgba(61,90,138,0.20)' }}>
+        <div style={{
+          height: '100%',
+          background: 'linear-gradient(90deg, #3D5A8A, #86BC25)',
+          animation: 'cv-progress 2400ms ease-in-out infinite',
+        }} />
+      </div>
+
+      <style>{`
+        @keyframes cv-fadein   { from { opacity:0 } to { opacity:1 } }
+        @keyframes cv-spin     { to { transform: rotate(360deg) } }
+        @keyframes cv-spin-rev { to { transform: rotate(-360deg) } }
+        @keyframes cv-pulse    { 0%,100% { opacity:.4; transform:scale(1) } 50% { opacity:1; transform:scale(1.4) } }
+        @keyframes cv-progress { 0% { width:0% } 60% { width:100% } 100% { width:100% } }
+      `}</style>
+    </div>
+  )
+}
+
 // ── Main app — extracted so hooks are never conditional ───────────────────────
 function MainApp() {
   const [bootDone,       setBootDone]       = useState(false)
@@ -54,6 +181,7 @@ function MainApp() {
   const [showSuggestions,setShowSuggestions]= useState(false)
   const [sessionRunning, setSessionRunning] = useState(false)
   const [geminiReady,    setGeminiReady]    = useState(false)
+  const [botConfig,      setBotConfig]      = useState(null)
 
   /* face ID */
   const [identityReady,  setIdentityReady]  = useState(false)
@@ -82,6 +210,7 @@ function MainApp() {
     } else if (msg.type === 'disconnected') {
       setConnected('connecting')
       setSessionRunning(false)
+      fetchConfig()
     } else if (msg.type === 'state') {
       setAppState(msg.value)
       setGeminiReady(true)
@@ -103,6 +232,21 @@ function MainApp() {
     onMessage,
     backendUrl: BACKEND_URL,
   })
+
+  /* Fetch bot config — on mount and on reconnect */
+  const fetchConfig = useCallback(() => {
+    fetch(`${BACKEND_URL}/config`)
+      .then(r => r.json())
+      .then(cfg => {
+        setBotConfig(cfg)
+        if (cfg.primary_color) {
+          document.documentElement.style.setProperty('--color-brand', cfg.primary_color)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { fetchConfig() }, [fetchConfig])
 
   /* Step 1 — create session */
   useEffect(() => {
@@ -212,44 +356,7 @@ function MainApp() {
       )}
 
       {bootDone && connected !== 'connected' && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 'var(--z-overlay, 400)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 18,
-          background: 'rgba(2,8,20,0.82)',
-          backdropFilter: 'blur(6px)',
-          WebkitBackdropFilter: 'blur(6px)',
-          pointerEvents: 'none',
-          animation: 'fadein 400ms ease',
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            border: '2.5px solid rgba(0,163,224,0.18)',
-            borderTopColor: 'var(--state-listening, #86BC25)',
-            animation: 'spin 900ms linear infinite',
-          }} />
-          <span style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13,
-            fontWeight: 500,
-            color: 'rgba(255,255,255,0.45)',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}>
-            Connecting to Vaani
-          </span>
-          <style>{`
-            @keyframes spin { to { transform: rotate(360deg); } }
-            @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
-          `}</style>
-        </div>
+        <ConnectingOverlay />
       )}
 
       <Header
@@ -283,6 +390,7 @@ function MainApp() {
             appState={appState}
             amplitudes={amplitudes}
             onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
+            avatarSrc={botConfig?.avatar_video_url || null}
           />
 
           <div style={{ display: 'contents' }} className="hud-layer">

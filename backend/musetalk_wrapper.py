@@ -53,7 +53,6 @@ class MuseTalkModel:
             print(f"[MUSETALK] Loading models on {self.device}...")
 
             import cv2
-            import json
             from diffusers import AutoencoderKL
             from musetalk.models.unet import UNet, PositionalEncoding
             from musetalk.whisper.audio2feature import Audio2Feature
@@ -62,16 +61,7 @@ class MuseTalkModel:
             self.vae = AutoencoderKL.from_pretrained(vae_path).to(self.device)
             self.vae.requires_grad_(False)
 
-            with open(str(MUSETALK_UNET_CFG)) as f:
-                unet_cfg = json.load(f)
-
-            import inspect
-            unet_arch = unet_cfg.get("architecture", unet_cfg)
-            valid_params = set(inspect.signature(UNet.__init__).parameters.keys()) - {'self'}
-            unet_arch = {k: v for k, v in unet_arch.items() if k in valid_params}
-            self.unet = UNet(**unet_arch)
-            state = torch.load(str(MUSETALK_UNET_PATH), map_location=self.device)
-            self.unet.load_state_dict(state)
+            self.unet = UNet(unet_config=str(MUSETALK_UNET_CFG), model_path=str(MUSETALK_UNET_PATH))
             self.unet = self.unet.to(self.device)
             self.unet.eval()
 

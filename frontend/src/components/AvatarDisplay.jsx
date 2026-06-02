@@ -1,38 +1,36 @@
 import { useRef, useEffect, useCallback } from 'react'
 
-/* Ring timings */
-const RING_DELAYS_SPEAKING  = [0, 700, 1400]
-const RING_DELAYS_LISTENING = [0, 900, 1800]
-const RING_DUR_SPEAKING     = 2200
-const RING_DUR_LISTENING    = 3000
+const W         = 460   // total container width (ring decorations use this)
+const VID_W     = 380   // video display width
+const VID_H     = 480   // video display height (portrait)
+const VID_LEFT  = (W - VID_W) / 2  // 40 — centers video horizontally
 
-/* Outer container = 460px; video = 400px, centered (30px inset each side) */
-const SIZE       = 460
-const VIDEO_SIZE = 400
-const INSET      = (SIZE - VIDEO_SIZE) / 2  // 30
+const RING_CX   = W / 2
+const RING_CY   = VID_H / 2        // rings orbit around the vertical center of the video
 
-/* Arc SVG dimensions — sits between ring-2 and ring-1 */
-const ARC_D = 420    // diameter of arc circle
-const ARC_R = ARC_D / 2
-const ARC_CX = SIZE / 2
-const ARC_CY = SIZE / 2
-const CIRC   = Math.PI * ARC_D             // circumference ≈ 1319
-const ARC_LEN = CIRC / 6                  // 60° arc ≈ 220px
+/* Arc dimensions */
+const ARC_D   = 420
+const ARC_R   = ARC_D / 2
+const CIRC    = Math.PI * ARC_D
+const ARC_LEN = CIRC / 6
 
-/* Tick marks for ring-2 */
+/* Tick marks */
 const TICKS = Array.from({ length: 8 }, (_, i) => {
   const angle = (i / 8) * Math.PI * 2 - Math.PI / 2
-  const r2    = (ARC_D + 20) / 2  // 220 — ring-2 radius (440/2)
+  const r2    = (ARC_D + 20) / 2
   const r1    = r2 - 8
   return {
-    x1: ARC_CX + r1 * Math.cos(angle),
-    y1: ARC_CY + r1 * Math.sin(angle),
-    x2: ARC_CX + r2 * Math.cos(angle),
-    y2: ARC_CY + r2 * Math.sin(angle),
+    x1: RING_CX + r1 * Math.cos(angle),
+    y1: RING_CY + r1 * Math.sin(angle),
+    x2: RING_CX + r2 * Math.cos(angle),
+    y2: RING_CY + r2 * Math.sin(angle),
   }
 })
 
-function arcColor(appState) {
+const RING_DELAYS_SPEAKING  = [0, 700, 1400]
+const RING_DELAYS_LISTENING = [0, 900, 1800]
+
+function stateColor(appState) {
   return {
     idle:      '#3D5A8A',
     listening: '#86BC25',
@@ -41,63 +39,56 @@ function arcColor(appState) {
   }[appState] || '#3D5A8A'
 }
 
+function glowColor(appState) {
+  return {
+    idle:      'rgba(61,90,138,0.22)',
+    listening: 'rgba(134,188,37,0.28)',
+    thinking:  'rgba(245,166,35,0.24)',
+    speaking:  'rgba(0,163,224,0.30)',
+  }[appState] || 'rgba(61,90,138,0.22)'
+}
+
 function arcDuration(appState) {
-  return {
-    idle:      '20000ms',
-    listening: '8000ms',
-    thinking:  '2000ms',
-    speaking:  '5000ms',
-  }[appState] || '20000ms'
+  return { idle: '20000ms', listening: '8000ms', thinking: '2000ms', speaking: '5000ms' }[appState] || '20000ms'
 }
 
-function glowShadow(appState) {
-  return {
-    idle:      'var(--glow-idle)',
-    listening: 'var(--glow-listening)',
-    thinking:  'var(--glow-thinking)',
-    speaking:  'var(--glow-speaking)',
-  }[appState] || 'none'
-}
-
-/* Circular waveform: 24 bars radiating from avatar edge */
 function CircularWaveform({ amplitudes, visible }) {
   const BAR_COUNT = 24
-  const CENTER = SIZE / 2
-  const R_INNER = VIDEO_SIZE / 2 + 4  // just outside video edge
-  const MAX_H   = 22
+  const R_INNER   = VID_W / 2 + 6
+  const MAX_H     = 20
 
-  const expanded = Array.from({ length: BAR_COUNT }, (_, i) => {
+  const bars = Array.from({ length: BAR_COUNT }, (_, i) => {
     const srcIdx = Math.floor((i / BAR_COUNT) * (amplitudes.length || 5))
-    const amp    = amplitudes[srcIdx] ?? 0
-    return Math.max(0.08, amp)
+    return Math.max(0.08, amplitudes[srcIdx] ?? 0)
   })
 
   return (
     <svg
       aria-hidden="true"
-      width={SIZE}
-      height={SIZE}
+      width={W}
+      height={VID_H}
       style={{
         position: 'absolute',
-        inset: 0,
+        top: 0,
+        left: 0,
         opacity: visible ? 1 : 0,
         transition: 'opacity 400ms var(--ease-standard)',
         pointerEvents: 'none',
         zIndex: 6,
       }}
     >
-      {expanded.map((amp, i) => {
-        const angle  = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2
-        const barH   = amp * MAX_H
-        const x1     = CENTER + R_INNER * Math.cos(angle)
-        const y1     = CENTER + R_INNER * Math.sin(angle)
-        const x2     = CENTER + (R_INNER + barH) * Math.cos(angle)
-        const y2     = CENTER + (R_INNER + barH) * Math.sin(angle)
+      {bars.map((amp, i) => {
+        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2
+        const barH  = amp * MAX_H
+        const cx    = RING_CX
+        const cy    = RING_CY
         return (
           <line
             key={i}
-            x1={x1} y1={y1}
-            x2={x2} y2={y2}
+            x1={cx + R_INNER * Math.cos(angle)}
+            y1={cy + R_INNER * Math.sin(angle)}
+            x2={cx + (R_INNER + barH) * Math.cos(angle)}
+            y2={cy + (R_INNER + barH) * Math.sin(angle)}
             stroke="rgba(0,163,224,0.70)"
             strokeWidth={2}
             strokeLinecap="round"
@@ -108,7 +99,7 @@ function CircularWaveform({ amplitudes, visible }) {
   )
 }
 
-export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
+export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, avatarSrc }) {
   const canvasRef = useRef(null)
   const videoRef  = useRef(null)
   const fadeTimer = useRef(null)
@@ -141,17 +132,14 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
   }, [])
 
   const isSpeakingOrListening = appState === 'speaking' || appState === 'listening'
-  const ringDelays    = appState === 'speaking' ? RING_DELAYS_SPEAKING  : RING_DELAYS_LISTENING
-  const ringDuration  = appState === 'speaking' ? RING_DUR_SPEAKING     : RING_DUR_LISTENING
-  const ringAnimation = appState === 'speaking' ? 'ring-pulse-blue'     : 'ring-pulse-green'
-  const ringColor     = appState === 'speaking'
-    ? 'rgba(0,163,224,0.38)'
-    : 'rgba(134,188,37,0.35)'
-
-  const color   = arcColor(appState)
-  const arcDur  = arcDuration(appState)
-
-  const avatarScale = appState === 'speaking' ? 'scale(1.02)' : 'scale(1)'
+  const ringDelays   = appState === 'speaking' ? RING_DELAYS_SPEAKING : RING_DELAYS_LISTENING
+  const ringDuration = appState === 'speaking' ? 2200 : 3000
+  const ringAnim     = appState === 'speaking' ? 'ring-pulse-blue' : 'ring-pulse-green'
+  const ringColor    = appState === 'speaking' ? 'rgba(0,163,224,0.38)' : 'rgba(134,188,37,0.35)'
+  const color        = stateColor(appState)
+  const arcDur       = arcDuration(appState)
+  const avatarScale  = appState === 'speaking' ? 'scale(1.01)' : 'scale(1)'
+  const videoSource  = avatarSrc || '/avatar_idle.mp4'
 
   return (
     <div
@@ -159,176 +147,176 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
       aria-label={`Vaani avatar — ${appState}`}
       style={{
         position: 'relative',
-        width: SIZE,
-        height: SIZE,
+        width: W,
+        height: VID_H,
         flexShrink: 0,
         animation: 'avatar-reveal 700ms var(--ease-out-expo) 200ms both',
-        willChange: 'transform',
       }}
     >
-      {/* ── Layer 1: outer dashed ring 460px, counter-rotating ── */}
+      {/* ── Deep background glow (state-reactive) ── */}
       <div
         aria-hidden="true"
         style={{
           position: 'absolute',
-          inset: 0,
+          inset: -60,
+          background: `radial-gradient(ellipse 70% 75% at 50% 50%, ${glowColor(appState)} 0%, transparent 70%)`,
+          transition: 'background 800ms var(--ease-standard)',
+          pointerEvents: 'none',
+          zIndex: 0,
+        }}
+      />
+
+      {/* ── Outer dashed ring ── */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          top: RING_CY - ARC_D / 2 - 20,
+          left: RING_CX - ARC_D / 2 - 20,
+          width: ARC_D + 40,
+          height: ARC_D + 40,
           borderRadius: '50%',
-          border: appState === 'idle'
-            ? '1px dashed rgba(0,163,224,0.05)'
-            : '1px dashed rgba(0,163,224,0.10)',
+          border: appState === 'idle' ? '1px dashed rgba(0,163,224,0.05)' : '1px dashed rgba(0,163,224,0.10)',
           animation: 'thinking-spin-reverse 80000ms linear infinite',
-          willChange: 'transform',
           pointerEvents: 'none',
           transition: 'border-color 600ms var(--ease-standard)',
         }}
       />
 
-      {/* ── Layer 2: ring 440px with tick marks, rotating slowly ── */}
+      {/* ── Tick-mark ring ── */}
       <svg
         aria-hidden="true"
-        width={SIZE}
-        height={SIZE}
+        width={W}
+        height={VID_H}
         style={{
           position: 'absolute',
-          inset: 0,
+          top: 0,
+          left: 0,
           animation: 'thinking-spin 60000ms linear infinite',
-          willChange: 'transform',
           pointerEvents: 'none',
           opacity: appState === 'idle' ? 0.4 : 0.8,
           transition: 'opacity 600ms var(--ease-standard)',
+          zIndex: 1,
         }}
       >
-        <circle
-          cx={ARC_CX} cy={ARC_CY} r={(ARC_D + 20) / 2}
-          fill="none"
-          stroke="rgba(134,188,37,0.15)"
-          strokeWidth={1}
-        />
+        <circle cx={RING_CX} cy={RING_CY} r={(ARC_D + 20) / 2}
+          fill="none" stroke="rgba(134,188,37,0.15)" strokeWidth={1} />
         {TICKS.map((tk, i) => (
-          <line
-            key={i}
-            x1={tk.x1} y1={tk.y1} x2={tk.x2} y2={tk.y2}
-            stroke="rgba(134,188,37,0.30)"
-            strokeWidth={1.5}
-          />
+          <line key={i} x1={tk.x1} y1={tk.y1} x2={tk.x2} y2={tk.y2}
+            stroke="rgba(134,188,37,0.30)" strokeWidth={1.5} />
         ))}
       </svg>
 
-      {/* ── Layer 3: glowing arc that orbits ── */}
+      {/* ── Glowing arc ── */}
       <svg
         aria-hidden="true"
-        width={SIZE}
-        height={SIZE}
+        width={W}
+        height={VID_H}
         style={{
           position: 'absolute',
-          inset: 0,
+          top: 0,
+          left: 0,
           animation: `thinking-spin ${arcDur} linear infinite`,
-          willChange: 'transform',
           pointerEvents: 'none',
-          transition: 'opacity 600ms var(--ease-standard)',
           opacity: appState === 'idle' ? 0.5 : 1,
+          transition: 'opacity 600ms var(--ease-standard)',
+          zIndex: 1,
         }}
       >
-        <circle
-          cx={ARC_CX}
-          cy={ARC_CY}
-          r={ARC_R}
-          fill="none"
-          stroke={color}
-          strokeWidth={2.5}
-          strokeLinecap="round"
+        <circle cx={RING_CX} cy={RING_CY} r={ARC_R}
+          fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round"
           strokeDasharray={`${ARC_LEN} ${CIRC - ARC_LEN}`}
-          style={{
-            filter: `drop-shadow(0 0 6px ${color})`,
-            transition: 'stroke 600ms var(--ease-standard), filter 600ms var(--ease-standard)',
-          }}
+          style={{ filter: `drop-shadow(0 0 6px ${color})`, transition: 'stroke 600ms var(--ease-standard)' }}
         />
       </svg>
 
-      {/* ── Radial pulse rings — listening / speaking ── */}
+      {/* ── Radial pulse rings ── */}
       {isSpeakingOrListening && ringDelays.map((delay) => (
         <div
           key={delay}
           aria-hidden="true"
           style={{
             position: 'absolute',
-            inset: INSET,
+            top: RING_CY - VID_W / 2,
+            left: VID_LEFT,
+            width: VID_W,
+            height: VID_W,
             borderRadius: '50%',
             border: `1.5px solid ${ringColor}`,
-            animation: `${ringAnimation} ${ringDuration}ms var(--ease-out-quart) ${delay}ms infinite`,
-            willChange: 'transform, opacity',
+            animation: `${ringAnim} ${ringDuration}ms var(--ease-out-quart) ${delay}ms infinite`,
             pointerEvents: 'none',
+            zIndex: 2,
           }}
         />
       ))}
 
-      {/* ── Thinking spinner overlay on video edge ── */}
+      {/* ── Thinking spinner ── */}
       {appState === 'thinking' && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            inset: INSET - 5,
-            borderRadius: '50%',
-            border: '1.5px dashed rgba(245,166,35,0.55)',
-            animation: 'thinking-spin 3500ms linear infinite',
-            willChange: 'transform',
-            pointerEvents: 'none',
-          }}
-        />
+        <div aria-hidden="true" style={{
+          position: 'absolute',
+          top: RING_CY - VID_W / 2 - 5,
+          left: VID_LEFT - 5,
+          width: VID_W + 10,
+          height: VID_W + 10,
+          borderRadius: '50%',
+          border: '1.5px dashed rgba(245,166,35,0.55)',
+          animation: 'thinking-spin 3500ms linear infinite',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }} />
       )}
 
       {/* ── Idle breathe ring ── */}
       {appState === 'idle' && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            inset: INSET - 5,
-            borderRadius: '50%',
-            border: '1.5px solid rgba(134,188,37,0.22)',
-            animation: 'glow-idle 3200ms ease-in-out infinite',
-            willChange: 'opacity',
-            pointerEvents: 'none',
-          }}
-        />
+        <div aria-hidden="true" style={{
+          position: 'absolute',
+          top: RING_CY - VID_W / 2 - 5,
+          left: VID_LEFT - 5,
+          width: VID_W + 10,
+          height: VID_W + 10,
+          borderRadius: '50%',
+          border: '1.5px solid rgba(134,188,37,0.22)',
+          animation: 'glow-idle 3200ms ease-in-out infinite',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }} />
       )}
 
-      {/* ── Layer 4: avatar circle (video hidden for now) ── */}
+      {/* ── Avatar video — portrait, gradient-masked ── */}
       <div
         style={{
           position: 'absolute',
-          top: INSET,
-          left: INSET,
-          width: VIDEO_SIZE,
-          height: VIDEO_SIZE,
-          borderRadius: '50%',
-          overflow: 'hidden',
-          background: '#010A1A',
-          boxShadow: glowShadow(appState),
+          top: 0,
+          left: VID_LEFT,
+          width: VID_W,
+          height: VID_H,
+          zIndex: 3,
           transform: avatarScale,
-          transition: `box-shadow 600ms var(--ease-standard), transform 400ms var(--ease-standard)`,
-          willChange: 'box-shadow, transform',
+          transition: 'transform 400ms var(--ease-standard)',
+          maskImage: 'radial-gradient(ellipse 88% 92% at 50% 46%, black 48%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 88% 92% at 50% 46%, black 48%, transparent 100%)',
         }}
       >
         <video
           ref={videoRef}
-          src="/avatar_idle.mp4"
+          key={videoSource}
+          src={videoSource}
           loop
           autoPlay
           muted
           playsInline
           aria-hidden="true"
           style={{
-            position: 'absolute',
             width: '100%',
             height: '100%',
             objectFit: 'cover',
+            objectPosition: 'center top',
+            display: 'block',
           }}
         />
       </div>
 
-      {/* ── Layer 5: MuseTalk canvas ── */}
+      {/* ── MuseTalk canvas overlay ── */}
       <canvas
         ref={canvasRef}
         width={360}
@@ -336,10 +324,10 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
         aria-hidden="true"
         style={{
           position: 'absolute',
-          top: INSET,
-          left: INSET,
-          width: VIDEO_SIZE,
-          height: VIDEO_SIZE,
+          top: RING_CY - 180,
+          left: RING_CX - 180,
+          width: 360,
+          height: 360,
           borderRadius: '50%',
           zIndex: 5,
           opacity: 0,
@@ -348,11 +336,22 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame }) {
         }}
       />
 
-      {/* ── Layer 6: Circular audio waveform ── */}
-      <CircularWaveform
-        amplitudes={amplitudes}
-        visible={appState === 'speaking'}
-      />
+      {/* ── Circular audio waveform ── */}
+      <CircularWaveform amplitudes={amplitudes} visible={appState === 'speaking'} />
+
+      {/* ── Bottom ground reflection ── */}
+      <div aria-hidden="true" style={{
+        position: 'absolute',
+        bottom: -10,
+        left: VID_LEFT + 20,
+        width: VID_W - 40,
+        height: 40,
+        background: `radial-gradient(ellipse 80% 100% at 50% 100%, ${glowColor(appState)} 0%, transparent 100%)`,
+        filter: 'blur(8px)',
+        pointerEvents: 'none',
+        transition: 'background 800ms var(--ease-standard)',
+        zIndex: 1,
+      }} />
     </div>
   )
 }
