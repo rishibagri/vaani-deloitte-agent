@@ -65,8 +65,10 @@ class MuseTalkModel:
             with open(str(MUSETALK_UNET_CFG)) as f:
                 unet_cfg = json.load(f)
 
+            import inspect
             unet_arch = unet_cfg.get("architecture", unet_cfg)
-            unet_arch = {k: v for k, v in unet_arch.items() if not k.startswith('_')}
+            valid_params = set(inspect.signature(UNet.__init__).parameters.keys()) - {'self'}
+            unet_arch = {k: v for k, v in unet_arch.items() if k in valid_params}
             self.unet = UNet(**unet_arch)
             state = torch.load(str(MUSETALK_UNET_PATH), map_location=self.device)
             self.unet.load_state_dict(state)

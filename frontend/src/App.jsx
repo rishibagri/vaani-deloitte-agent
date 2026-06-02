@@ -211,6 +211,47 @@ function MainApp() {
         <BootSequence onComplete={() => setBootDone(true)} />
       )}
 
+      {bootDone && connected !== 'connected' && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 'var(--z-overlay, 400)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 18,
+          background: 'rgba(2,8,20,0.82)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
+          pointerEvents: 'none',
+          animation: 'fadein 400ms ease',
+        }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            border: '2.5px solid rgba(0,163,224,0.18)',
+            borderTopColor: 'var(--state-listening, #86BC25)',
+            animation: 'spin 900ms linear infinite',
+          }} />
+          <span style={{
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'rgba(255,255,255,0.45)',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}>
+            Connecting to Vaani
+          </span>
+          <style>{`
+            @keyframes spin { to { transform: rotate(360deg); } }
+            @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+          `}</style>
+        </div>
+      )}
+
       <Header
         connected={connected}
         onLanguageChange={handleLanguageChange}
@@ -252,7 +293,7 @@ function MainApp() {
           </div>
         </div>
 
-        <StatusBadge appState={appState} />
+        <StatusBadge appState={appState} connected={connected} />
 
         <MicButton
           isRecording={isRecording}

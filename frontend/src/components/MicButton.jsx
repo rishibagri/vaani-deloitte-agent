@@ -80,7 +80,7 @@ export function MicButton({ isRecording, isDisabled, onStart, onStop, appState }
     : 'var(--text-secondary)'
 
   const ariaLabel = isDisabled
-    ? (isThinking ? 'Vaani is thinking — please wait' : 'Microphone unavailable')
+    ? (isThinking ? 'Vaani is thinking — please wait' : appState === 'connecting' ? 'Connecting...' : 'Microphone unavailable')
     : isRecording
     ? 'Recording — release to send'
     : 'Hold to speak'

@@ -1,37 +1,41 @@
 const STATE_CONFIG = {
-  idle:      { label: 'Ready',          color: 'var(--state-idle)',      pulse: false },
-  listening: { label: 'Listening',      color: 'var(--state-listening)', pulse: true  },
-  thinking:  { label: 'Thinking',       color: 'var(--state-thinking)',  pulse: true  },
-  speaking:  { label: 'Speaking',       color: 'var(--state-speaking)',  pulse: true  },
-  error:     { label: 'Offline',        color: 'var(--state-error)',     pulse: false },
+  connecting: { label: 'Connecting',      color: 'var(--text-muted)',      pulse: true  },
+  idle:       { label: 'Ready',           color: 'var(--state-idle)',      pulse: false },
+  listening:  { label: 'Listening',       color: 'var(--state-listening)', pulse: true  },
+  thinking:   { label: 'Thinking',        color: 'var(--state-thinking)',  pulse: true  },
+  speaking:   { label: 'Speaking',        color: 'var(--state-speaking)',  pulse: true  },
+  error:      { label: 'Offline',         color: 'var(--state-error)',     pulse: false },
 }
 
 const BG = {
-  idle:      'rgba(61,90,138,0.07)',
-  listening: 'rgba(134,188,37,0.07)',
-  thinking:  'rgba(245,166,35,0.07)',
-  speaking:  'rgba(0,163,224,0.07)',
-  error:     'rgba(255,68,68,0.07)',
+  connecting: 'rgba(255,255,255,0.04)',
+  idle:       'rgba(61,90,138,0.07)',
+  listening:  'rgba(134,188,37,0.07)',
+  thinking:   'rgba(245,166,35,0.07)',
+  speaking:   'rgba(0,163,224,0.07)',
+  error:      'rgba(255,68,68,0.07)',
 }
 
 const BORDER = {
-  idle:      'rgba(61,90,138,0.15)',
-  listening: 'rgba(134,188,37,0.20)',
-  thinking:  'rgba(245,166,35,0.18)',
-  speaking:  'rgba(0,163,224,0.18)',
-  error:     'rgba(255,68,68,0.20)',
+  connecting: 'rgba(255,255,255,0.10)',
+  idle:       'rgba(61,90,138,0.15)',
+  listening:  'rgba(134,188,37,0.20)',
+  thinking:   'rgba(245,166,35,0.18)',
+  speaking:   'rgba(0,163,224,0.18)',
+  error:      'rgba(255,68,68,0.20)',
 }
 
-export function StatusBadge({ appState }) {
-  const cfg    = STATE_CONFIG[appState] || STATE_CONFIG.idle
-  const bg     = BG[appState]     || BG.idle
-  const border = BORDER[appState] || BORDER.idle
+export function StatusBadge({ appState, connected }) {
+  const key    = connected !== 'connected' ? 'connecting' : (appState || 'idle')
+  const cfg    = STATE_CONFIG[key] || STATE_CONFIG.idle
+  const bg     = BG[key]     || BG.idle
+  const border = BORDER[key] || BORDER.idle
 
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-label={`Vaani: ${cfg.label}`}
+      aria-label={`Vaani: ${cfg.label}${connected !== 'connected' ? ' — waiting for backend' : ''}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
