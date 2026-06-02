@@ -205,43 +205,51 @@ class MuseTalkModel:
 
             result_frames = []
             timesteps = torch.tensor([0], device=self.device)
+            BATCH = 8  # frames per UNet/VAE forward pass
 
             with torch.no_grad():
-                for i in range(n_frames):
-                    face_bgr   = face_crops[i]   # 256x256 BGR
-                    full_frame = full_frames[i]
-                    bbox       = bboxes[i]
+                for start in range(0, n_frames, BATCH):
+                    end = min(start + BATCH, n_frames)
+                    bsz = end - start
 
-                    # 8-channel [masked | ref] latent — use precomputed cache if available
-                    if self._latent_cache is not None and i < len(indices):
-                        latent_input = self._latent_cache[indices[i]]
-                    else:
-                        latent_input = self.vae.get_latents_for_unet(face_bgr).to(
-                            device=self.device, dtype=self.weight_dtype
-                        )
+                    # Stack 8-channel latents for this sub-batch
+                    lat_list = []
+                    for i in range(start, end):
+                        if self._latent_cache is not None and i < len(indices):
+                            lat_list.append(self._latent_cache[indices[i]])
+                        else:
+                            lat_list.append(self.vae.get_latents_for_unet(face_crops[i]).to(
+                                device=self.device, dtype=self.weight_dtype))
+                    latent_batch = torch.cat(lat_list, dim=0)  # [bsz, 8, 32, 32]
 
-                    # Per-frame audio feature [50, 384] -> [1, 50, 384] -> positional encoding
-                    audio_t = whisper_chunks[i].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
-                    audio_t = self.pe(audio_t)
+                    # Stack audio features [bsz, 50, 384] + positional encoding
+                    audio_batch = torch.stack(
+                        [whisper_chunks[i] for i in range(start, end)], dim=0
+                    ).to(device=self.device, dtype=self.weight_dtype)
+                    audio_batch = self.pe(audio_batch)
 
+                    ts = timesteps.repeat(bsz)
                     pred_latents = self.unet.model(
-                        latent_input, timesteps, encoder_hidden_states=audio_t
+                        latent_batch, ts, encoder_hidden_states=audio_batch
                     ).sample
 
-                    # decode_latents returns BGR uint8 numpy [B, 256, 256, 3]
+                    # decode_latents returns BGR uint8 numpy [bsz, 256, 256, 3]
                     recon = self.vae.decode_latents(pred_latents)
-                    generated_bgr = recon[0]
-                    generated_bgr = cv2.resize(generated_bgr, (256, 256))
 
-                    # Paste generated face back into the full frame at the face bbox
-                    result_frame = full_frame.copy()
-                    if bbox is not None and len(bbox) >= 4:
-                        x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-                        face_h, face_w = y2 - y1, x2 - x1
-                        if face_h > 0 and face_w > 0:
-                            result_frame[y1:y2, x1:x2] = cv2.resize(generated_bgr, (face_w, face_h))
+                    for j in range(bsz):
+                        i = start + j
+                        full_frame = full_frames[i]
+                        bbox       = bboxes[i]
+                        generated_bgr = recon[j]
 
-                    result_frames.append(cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB))
+                        result_frame = full_frame.copy()
+                        if bbox is not None and len(bbox) >= 4:
+                            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                            face_h, face_w = y2 - y1, x2 - x1
+                            if face_h > 0 and face_w > 0:
+                                result_frame[y1:y2, x1:x2] = cv2.resize(generated_bgr, (face_w, face_h))
+
+                        result_frames.append(cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB))
 
             return result_frames
 

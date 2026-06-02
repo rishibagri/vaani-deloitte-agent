@@ -84,23 +84,55 @@ class LoopCache:
         print(f"[SETUP] Loop cache ready with {self.frame_count} frames")
 
     def _detect_faces_opencv(self, frames: list) -> list:
-        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        detector = cv2.CascadeClassifier(cascade_path)
+        """
+        Per-frame face detection. Prefers YuNet (accurate, tracks the moving head);
+        falls back to Haar cascade if the YuNet model isn't present. Boxes that
+        fail detection inherit the previous frame's box to avoid flicker.
+        """
+        yunet_path = BASE_DIR / "models" / "face" / "face_detection_yunet_2023mar.onnx"
+        detector = None
+        if yunet_path.exists():
+            try:
+                detector = cv2.FaceDetectorYN.create(str(yunet_path), "", (320, 320), score_threshold=0.6)
+                print("[SETUP] Using YuNet for loop-video face tracking")
+            except Exception as e:
+                print(f"[SETUP] YuNet init failed ({e}); using Haar cascade")
+
         coords = []
+        last = None
         for frame in frames:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-            if len(faces) > 0:
-                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-                pad = int(min(w, h) * 0.25)
-                x1 = max(0, x - pad)
-                y1 = max(0, y - pad)
-                x2 = min(frame.shape[1], x + w + pad)
-                y2 = min(frame.shape[0], y + h + pad)
-                coords.append((x1, y1, x2, y2))
+            box = None
+            h_img, w_img = frame.shape[:2]
+            if detector is not None:
+                detector.setInputSize((w_img, h_img))
+                _, faces = detector.detect(frame)
+                if faces is not None and len(faces) > 0:
+                    f = max(faces, key=lambda r: r[2] * r[3])
+                    x, y, w, h = f[0], f[1], f[2], f[3]
+                    box = self._pad_box(x, y, w, h, w_img, h_img)
             else:
-                coords.append(None)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                hits = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+                if len(hits) > 0:
+                    x, y, w, h = max(hits, key=lambda r: r[2] * r[3])
+                    box = self._pad_box(x, y, w, h, w_img, h_img)
+
+            if box is None:
+                box = last  # reuse previous frame's box to avoid a flicker/gap
+            else:
+                last = box
+            coords.append(box)
         return coords
+
+    @staticmethod
+    def _pad_box(x, y, w, h, w_img, h_img, pad_ratio=0.25):
+        pad = int(min(w, h) * pad_ratio)
+        x1 = max(0, int(x - pad))
+        y1 = max(0, int(y - pad))
+        x2 = min(w_img, int(x + w + pad))
+        y2 = min(h_img, int(y + h + pad))
+        return (x1, y1, x2, y2)
 
     def _crop_faces(self, frames, coords):
         crops = []
