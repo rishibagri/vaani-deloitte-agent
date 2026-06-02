@@ -256,12 +256,22 @@ function MainApp() {
     return () => clearTimeout(t)
   }, [identityReady])
 
-  /* Step 1 — create session */
+  /* Step 1 — create session, retry with backoff until backend is ready */
   useEffect(() => {
-    fetch(`${BACKEND_URL}/session`, { method: 'POST' })
-      .then(r => r.json())
-      .then(d => setSessionId(d.session_id))
-      .catch(() => setConnected('error'))
+    let cancelled = false
+    const attempt = (n) => {
+      fetch(`${BACKEND_URL}/session`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => { if (!cancelled) setSessionId(d.session_id) })
+        .catch(() => {
+          if (!cancelled) {
+            const delay = Math.min(1000 * Math.pow(2, n), 8000)
+            setTimeout(() => attempt(n + 1), delay)
+          }
+        })
+    }
+    attempt(0)
+    return () => { cancelled = true }
   }, [])
 
   /* Step 2 — identify user once camera + session are ready */

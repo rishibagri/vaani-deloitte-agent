@@ -1,8 +1,6 @@
 import asyncio
 import os
 import sys
-import wave
-import tempfile
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -65,6 +63,7 @@ class MuseTalkModel:
                 unet_config=str(MUSETALK_UNET_CFG),
                 model_path=str(MUSETALK_UNET_PATH),
             )
+            self.unet.model.eval()  # UNet wrapper doesn't call eval() internally
 
             # Whisper-based audio feature extractor (MuseTalk's bundled whisper fork)
             whisper_pt = BASE_DIR / "models" / "whisper" / "tiny.pt"
@@ -90,22 +89,25 @@ class MuseTalkModel:
         os.chdir(str(MUSETALK_DIR))  # MuseTalk uses ./musetalk/... paths relative to its clone dir
 
         try:
-            # Write PCM bytes to a temp WAV — audio2feat() needs a file path
-            tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-            tmp.close()
-            try:
-                with wave.open(tmp.name, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)   # int16 = 2 bytes
-                    wf.setframerate(16000)
-                    wf.writeframes(audio_bytes_16k)
-                audio_feat    = self.audio_processor.audio2feat(tmp.name)
-                audio_chunks  = self.audio_processor.feature2chunks(audio_feat, fps=25)
-            finally:
-                try:
-                    os.unlink(tmp.name)
-                except Exception:
-                    pass
+            # Convert PCM bytes to float32 and pass directly to whisper transcribe.
+            # whisper.transcribe() accepts a numpy float32 array, bypassing ffmpeg entirely.
+            audio_float = np.frombuffer(audio_bytes_16k, dtype=np.int16).astype(np.float32) / 32768.0
+            result = self.audio_processor.model.transcribe(audio_float, verbose=False)
+
+            embed_list = []
+            for emb in result.get('segments', []):
+                enc = emb['encoder_embeddings']
+                enc = enc.transpose(0, 2, 1, 3).squeeze(0)
+                end_idx = int(emb['end'])
+                start_idx = int(emb['start'])
+                emb_end_idx = int((end_idx - start_idx) / 2)
+                embed_list.append(enc[:emb_end_idx])
+
+            if not embed_list:
+                return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
+
+            audio_feat   = np.concatenate(embed_list, axis=0)
+            audio_chunks = self.audio_processor.feature2chunks(audio_feat, fps=25)
 
             if not audio_chunks:
                 return [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in full_frames]
