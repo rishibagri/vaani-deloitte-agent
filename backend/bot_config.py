@@ -34,12 +34,15 @@ BOT_DEFAULTS: dict = {
     "supported_languages": ["en", "hi", "ta", "te", "kn", "ml", "bn", "ur"],
     "system_prompt_extra": "",
     "avatar_video_url":  None,
+    "render_mode":       "musetalk",
+    "avatar_3d_url":     "",
     "welcome_message":   "",
     "created_at":        None,
     "updated_at":        None,
 }
 
 _ALLOWED_VOICES = {"Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Perseus"}
+_ALLOWED_RENDER_MODES = {"musetalk", "3d"}
 _ALLOWED_MODELS = {
     "gemini-3.1-flash-live-preview",
     "gemini-2.0-flash-live-001",
@@ -77,6 +80,8 @@ def _validate_in_place(cfg: dict) -> None:
         cfg["agent_voice"] = "Puck"
     if cfg.get("llm_model") not in _ALLOWED_MODELS:
         cfg["llm_model"] = BOT_DEFAULTS["llm_model"]
+    if cfg.get("render_mode") not in _ALLOWED_RENDER_MODES:
+        cfg["render_mode"] = "musetalk"
 
 
 def _read_bot_file(slug: str) -> Optional[dict]:
@@ -218,7 +223,7 @@ def public_view(bot: Optional[dict] = None) -> dict:
     return {k: bot.get(k) for k in (
         "id", "company_name", "company_tagline", "logo_url", "primary_color",
         "agent_name", "agent_role", "default_language", "supported_languages",
-        "avatar_video_url", "welcome_message",
+        "avatar_video_url", "render_mode", "avatar_3d_url", "welcome_message",
     )}
 
 

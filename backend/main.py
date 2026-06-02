@@ -28,6 +28,33 @@ _session_user_map: dict[str, int] = {}
 _loaded_avatar_sig: Optional[str] = None
 _avatar_lock = asyncio.Lock()
 
+# Lock guarding the lazy MuseTalk model load so two sessions never load at once.
+_musetalk_load_lock = asyncio.Lock()
+
+
+def _active_render_mode() -> str:
+    """Render mode of the currently-active bot ('musetalk' or '3d')."""
+    try:
+        from bot_config import get_active
+        return get_active().get("render_mode") or "musetalk"
+    except Exception:
+        return "musetalk"
+
+
+async def _ensure_musetalk_loaded():
+    """
+    Lazily load the MuseTalk models the first time a musetalk-mode session needs
+    them. In 3d mode this is never called, so no GPU work happens at all.
+    """
+    if not MUSETALK_ENABLED or musetalk.loaded:
+        return
+    async with _musetalk_load_lock:
+        if musetalk.loaded:  # re-check after acquiring the lock
+            return
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, musetalk.load)
+        print("[SETUP] MuseTalk models loaded (lazy).")
+
 
 def _resolve_avatar_video() -> Path:
     """Return a file path for the active bot's avatar video (default if none/custom-missing)."""
@@ -49,9 +76,19 @@ def _resolve_avatar_video() -> Path:
 
 
 async def ensure_avatar_loaded():
-    """Rebuild the loop cache + latents for the active bot's avatar if it changed."""
+    """Rebuild the loop cache + latents for the active bot's avatar if it changed.
+
+    In '3d' render mode the browser renders the head, so the backend does no
+    lip-sync: skip MuseTalk + the loop cache entirely. In 'musetalk' mode, make
+    sure the (lazily-loaded) models are ready before building the loop cache.
+    """
     global _loaded_avatar_sig
-    if not MUSETALK_ENABLED or not musetalk.loaded:
+    if not MUSETALK_ENABLED:
+        return
+    if _active_render_mode() == "3d":
+        return
+    await _ensure_musetalk_loaded()
+    if not musetalk.loaded:
         return
     try:
         from bot_config import get_active
@@ -95,12 +132,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[SETUP] Memory layer failed to connect: {e}")
 
-    if MUSETALK_ENABLED:
-        musetalk.load()
-        # Build the loop cache + latents for the currently-active bot's avatar.
-        await ensure_avatar_loaded()
-    else:
+    if not MUSETALK_ENABLED:
         print("[SETUP] MuseTalk disabled. Avatar will show loop video only.")
+    elif _active_render_mode() == "3d":
+        # 3D mode: the browser renders the head and the backend only streams
+        # audio — skip MuseTalk model load + loop cache build for instant startup.
+        print("[SETUP] Active bot is in 3D render mode. Skipping MuseTalk (instant startup).")
+    else:
+        # MuseTalk mode: models load lazily on the first session via
+        # ensure_avatar_loaded(), which also builds the loop cache + latents.
+        await ensure_avatar_loaded()
 
     print("[SETUP] Ready. Waiting for connections.")
     yield

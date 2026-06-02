@@ -425,9 +425,28 @@ function ModelSection({ draft, onChange, token }) {
   )
 }
 
+const RENDER_MODES = [
+  { id: 'musetalk', label: 'MuseTalk (2D lip-sync, GPU)' },
+  { id: '3d', label: '3D Avatar (browser, instant)' },
+]
+
 function AvatarSection({ draft, onChange }) {
+  const renderMode = draft.render_mode || 'musetalk'
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <FieldGroup>
+        <Label htmlFor="render_mode">Render Mode</Label>
+        <Select id="render_mode" value={renderMode}
+          onChange={v => onChange('render_mode', v)} options={RENDER_MODES} />
+      </FieldGroup>
+      {renderMode === '3d' && (
+        <FieldGroup>
+          <Label htmlFor="avatar_3d_url">3D Avatar URL (Ready Player Me .glb)</Label>
+          <Input id="avatar_3d_url" value={draft.avatar_3d_url}
+            onChange={v => onChange('avatar_3d_url', v)}
+            placeholder="https://models.readyplayer.me/your-avatar.glb" />
+        </FieldGroup>
+      )}
       <FieldGroup>
         <Label>Avatar Video</Label>
         <UploadZone label="Avatar video" accept="video/mp4,video/webm"

@@ -8,6 +8,7 @@ import { useFaceCapture }  from './hooks/useFaceCapture'
 import { BootSequence }       from './components/BootSequence'
 import { ParticleCanvas }     from './components/ParticleCanvas'
 import { AvatarDisplay }      from './components/AvatarDisplay'
+import { Avatar3D }           from './components/Avatar3D'
 import { TranscriptOverlay }  from './components/TranscriptOverlay'
 import { HUDReadout }         from './components/HUDReadout'
 import { Header }             from './components/Header'
@@ -419,13 +420,21 @@ function MainApp() {
       >
         {/* Avatar + HUD */}
         <div className="avatar-stage" style={{ position: 'relative' }}>
-          <AvatarDisplay
-            appState={appState}
-            amplitudes={amplitudes}
-            onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
-            onClearCanvas={(fn) => { clearCanvasRef.current = fn }}
-            avatarSrc={botConfig?.avatar_video_url || null}
-          />
+          {botConfig?.render_mode === '3d' ? (
+            <Avatar3D
+              appState={appState}
+              getLevel={audioPlayback.getLevel}
+              avatarUrl={botConfig?.avatar_3d_url || null}
+            />
+          ) : (
+            <AvatarDisplay
+              appState={appState}
+              amplitudes={amplitudes}
+              onVideoFrame={(handler) => { videoFrameHandlerRef.current = handler }}
+              onClearCanvas={(fn) => { clearCanvasRef.current = fn }}
+              avatarSrc={botConfig?.avatar_video_url || null}
+            />
+          )}
 
           <div style={{ display: 'contents' }} className="hud-layer">
             <HUDReadout position="top-left"     appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
