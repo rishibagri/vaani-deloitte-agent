@@ -18,7 +18,7 @@ print('Downloading MuseTalk V1.5 weights...')
 snapshot_download('TMElyralab/MuseTalk', local_dir='../models', allow_patterns=['musetalkV15/*'])
 
 print('Downloading SD VAE...')
-snapshot_download('stabilityai/sd-vae-ft-mse', local_dir='../models/sd-vae', allow_patterns=['config.json', 'diffusion_pytorch_model.bin'])
+snapshot_download('stabilityai/sd-vae-ft-mse', local_dir='../models/sd-vae', allow_patterns=['config.json', 'diffusion_pytorch_model.bin', 'diffusion_pytorch_model.safetensors'])
 
 print('Downloading Whisper...')
 snapshot_download('openai/whisper-tiny', local_dir='../models/whisper', allow_patterns=['config.json', 'pytorch_model.bin', 'preprocessor_config.json'])
