@@ -15,7 +15,11 @@
       "Bash(backend/.venv/bin/pip show *)",
       "Bash(npx --yes acorn --ecma2020 --module frontend/src/App.jsx)",
       "Bash(git -C /Users/rishii3/Desktop/deloitte diff --name-only HEAD)",
-      "Bash(git -C /Users/rishii3/Desktop/deloitte status --short)"
+      "Bash(git -C /Users/rishii3/Desktop/deloitte status --short)",
+      "Bash(npm run *)",
+      "Bash(git checkout *)",
+      "Bash(grep -E '\\\\.\\(sh|bat|cmd|ps1|txt|toml|cfg|ini|yml|yaml|json|md\\)$')",
+      "Bash(xargs ls -la)"
     ]
   }
 }

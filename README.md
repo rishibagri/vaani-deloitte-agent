@@ -23,17 +23,18 @@ Mic ──► Gemini Live (STT + LLM + TTS) ──► FastAPI Backend ──► 
 
 > MuseTalk lip sync is disabled automatically on Mac because CUDA is not available. All Gemini Live features work normally without it.
 
-### Windows / Alienware
+### Windows (CUDA GPU)
 
-- Python 3.10 from [python.org](https://python.org) — check **Add Python to PATH** during install
-- Node.js 20 LTS from [nodejs.org](https://nodejs.org)
-- Git for Windows from [git-scm.com](https://git-scm.com)
-- NVIDIA CUDA Toolkit 11.7 from [developer.nvidia.com/cuda-toolkit-archive](https://developer.nvidia.com/cuda-toolkit-archive)
+- **Python 3.10** exactly from [python.org](https://python.org) — check **Add Python to PATH** during install. MuseTalk dependencies are sensitive to the minor version; 3.11+ may break them.
+- **Node.js 20 LTS** from [nodejs.org](https://nodejs.org)
+- **Git for Windows** from [git-scm.com](https://git-scm.com)
+- **NVIDIA driver** up to date — `setup.bat` reads the CUDA version from `nvidia-smi` and auto-selects the right PyTorch build (cu117 / cu118 / cu121). You do **not** need to install the CUDA Toolkit manually unless `nvidia-smi` is missing.
+- **Visual Studio C++ Build Tools** from [visualstudio.microsoft.com/visual-cpp-build-tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select the **"Desktop development with C++"** workload. Required for `chumpy` (MuseTalk blending). Without it `setup.bat` will warn but continue; MuseTalk will still run with reduced blending quality.
 
-Verify CUDA installed correctly:
+Verify your GPU is visible before running setup:
 
 ```
-nvcc --version
+nvidia-smi
 ```
 
 ---
@@ -245,7 +246,7 @@ The backend is not running or not reachable on port 8000. Start the backend firs
 Check the backend terminal for `[GEMINI] Send error` messages. Restart the backend. If it persists, confirm `GEMINI_API_KEY` is valid and the key has access to `gemini-3.1-flash-live-preview`.
 
 **MuseTalk not loading on Windows**
-Run `nvcc --version` in Command Prompt to confirm CUDA is installed. Run `scripts\download_models.bat` if the `models\` folder is empty or missing. Check the backend terminal for `[MUSETALK]` error messages on startup.
+Run `nvidia-smi` to confirm your GPU and CUDA version are visible. Run `scripts\download_models.bat` if the `models\` folder is empty or missing. Check the backend terminal for `[MUSETALK]` error messages on startup. If `chumpy` failed during setup, install Visual Studio C++ Build Tools and re-run `setup.bat`.
 
 **WebSocket keeps disconnecting**
 The Gemini Live session has a 15-minute limit. The backend renews it automatically. If disconnects happen immediately, check your internet connection and API key quota.

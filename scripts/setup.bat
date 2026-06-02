@@ -5,7 +5,7 @@ echo  Vaani Setup — Deloitte DCIT Avatar Intelligence
 echo ===================================================
 echo.
 
-REM ── Prerequisite checks ──────────────────────────
+REM ── Python check (3.10 required) ──────────────────
 
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -15,12 +15,27 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
+for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PY_VERSION=%%v
+for /f "tokens=2 delims=." %%b in ("!PY_VERSION!") do set PY_MINOR=%%b
+if !PY_MINOR! LSS 10 (
+    echo [ERROR] Python 3.10+ required. Got Python !PY_VERSION!
+    echo         MuseTalk dependencies require Python 3.10.
+    echo         Install Python 3.10 from https://python.org
+    pause & exit /b 1
+)
+echo [OK] Python !PY_VERSION!
+
+REM ── Node.js check ─────────────────────────────────
+
 node --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Node.js not found.
     echo         Install Node.js 20 LTS from https://nodejs.org
     pause & exit /b 1
 )
+for /f %%v in ('node --version') do echo [OK] Node.js %%v
+
+REM ── Git check ─────────────────────────────────────
 
 git --version >nul 2>&1
 if errorlevel 1 (
@@ -28,21 +43,74 @@ if errorlevel 1 (
     echo         Install Git for Windows from https://git-scm.com
     pause & exit /b 1
 )
+echo [OK] Git found
 
-REM ── GPU detection ────────────────────────────────
+REM ── GPU + CUDA version detection ──────────────────
 
 set GPU_AVAILABLE=false
+set TORCH_CHANNEL=cpu
+set TORCH_VER=2.0.1
+set TORCHVISION_VER=0.15.2
+set MMCV_VER=2.0.1
+set MMCV_TORCH_TAG=torch2.0
+
 nvidia-smi >nul 2>&1
 if not errorlevel 1 (
     set GPU_AVAILABLE=true
-    echo [INFO] NVIDIA GPU detected. Full GPU dependencies will be installed.
+
+    REM Use Python to reliably parse the CUDA version from nvidia-smi
+    python -c "import subprocess,re; o=subprocess.check_output('nvidia-smi',text=True,stderr=subprocess.DEVNULL); m=re.search(r'CUDA Version: (\d+)\.(\d+)', o); print((m.group(1),m.group(2)) if m else ('0','0'))" > "%TEMP%\vaani_cuda.txt" 2>nul
+    set /p CUDA_TUPLE=<"%TEMP%\vaani_cuda.txt"
+    del "%TEMP%\vaani_cuda.txt" >nul 2>&1
+
+    REM CUDA_TUPLE is like "('12', '4')" — extract the first number
+    python -c "import subprocess,re; o=subprocess.check_output('nvidia-smi',text=True,stderr=subprocess.DEVNULL); m=re.search(r'CUDA Version: (\d+)', o); print(m.group(1) if m else '0')" > "%TEMP%\vaani_cuda_major.txt" 2>nul
+    set /p CUDA_MAJOR=<"%TEMP%\vaani_cuda_major.txt"
+    del "%TEMP%\vaani_cuda_major.txt" >nul 2>&1
+
+    python -c "import subprocess,re; o=subprocess.check_output('nvidia-smi',text=True,stderr=subprocess.DEVNULL); m=re.search(r'CUDA Version: \d+\.(\d+)', o); print(m.group(1) if m else '0')" > "%TEMP%\vaani_cuda_minor.txt" 2>nul
+    set /p CUDA_MINOR=<"%TEMP%\vaani_cuda_minor.txt"
+    del "%TEMP%\vaani_cuda_minor.txt" >nul 2>&1
+
+    if not defined CUDA_MAJOR set CUDA_MAJOR=0
+    if not defined CUDA_MINOR set CUDA_MINOR=0
+
+    if !CUDA_MAJOR! GEQ 12 (
+        set TORCH_CHANNEL=cu121
+        set TORCH_VER=2.1.0
+        set TORCHVISION_VER=0.16.0
+        set MMCV_VER=2.1.0
+        set MMCV_TORCH_TAG=torch2.1
+        echo [INFO] NVIDIA GPU detected — CUDA !CUDA_MAJOR!.!CUDA_MINOR! ^(^>=12^)
+        echo        Using PyTorch 2.1.0 + cu121
+    ) else if !CUDA_MAJOR! EQU 11 (
+        if !CUDA_MINOR! GEQ 8 (
+            set TORCH_CHANNEL=cu118
+            set TORCH_VER=2.0.1
+            set TORCHVISION_VER=0.15.2
+            echo [INFO] NVIDIA GPU detected — CUDA !CUDA_MAJOR!.!CUDA_MINOR!
+            echo        Using PyTorch 2.0.1 + cu118
+        ) else (
+            set TORCH_CHANNEL=cu117
+            set TORCH_VER=2.0.1
+            set TORCHVISION_VER=0.15.2
+            echo [INFO] NVIDIA GPU detected — CUDA !CUDA_MAJOR!.!CUDA_MINOR!
+            echo        Using PyTorch 2.0.1 + cu117
+            echo [WARN] CUDA 11.7 is outdated. Updating your NVIDIA driver is recommended.
+        )
+    ) else (
+        echo [WARN] Could not determine CUDA version — defaulting to cu118.
+        set TORCH_CHANNEL=cu118
+        set TORCH_VER=2.0.1
+        set TORCHVISION_VER=0.15.2
+    )
 ) else (
     echo [INFO] No NVIDIA GPU detected. Installing CPU-only dependencies.
-    echo        MuseTalk lip sync will be disabled automatically ^(MUSETALK_ENABLED=auto^).
+    echo        MuseTalk lip sync will be disabled automatically.
 )
 echo.
 
-REM ── Clone MuseTalk ───────────────────────────────
+REM ── Clone MuseTalk ────────────────────────────────
 
 if "!GPU_AVAILABLE!"=="true" (
     if not exist "musetalk" (
@@ -53,53 +121,73 @@ if "!GPU_AVAILABLE!"=="true" (
             pause & exit /b 1
         )
     ) else (
-        echo [INFO] musetalk\ already present, skipping clone.
+        echo [INFO] musetalk\ already present — skipping clone.
     )
 )
 
-REM ── Backend virtual environment ──────────────────
+REM ── Backend virtual environment ───────────────────
 
 if not exist "backend\.venv" (
-    echo [SETUP] Creating backend virtual environment...
+    echo [SETUP] Creating Python virtual environment in backend\.venv ...
     python -m venv backend\.venv
 )
 
 echo [SETUP] Activating virtual environment...
 call backend\.venv\Scripts\activate.bat
 
+echo [SETUP] Upgrading pip...
+python -m pip install --upgrade pip --quiet
+
 echo [SETUP] Installing base Python dependencies...
 pip install -r backend\requirements.txt
 
 if "!GPU_AVAILABLE!"=="true" (
-    echo [SETUP] Installing GPU dependencies ^(PyTorch CUDA 11.7^)...
-    pip install -r backend\requirements_gpu.txt --index-url https://download.pytorch.org/whl/cu117
+    echo.
+    echo [SETUP] Installing PyTorch !TORCH_VER! ^(!TORCH_CHANNEL!^)...
+    pip install torch==!TORCH_VER! torchvision==!TORCHVISION_VER! --index-url https://download.pytorch.org/whl/!TORCH_CHANNEL!
 
-    echo [SETUP] Installing mmcv for CUDA 11.7...
-    pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0/index.html
+    echo [SETUP] Installing GPU utility packages...
+    pip install -r backend\requirements_gpu.txt
+
+    echo [SETUP] Installing mmcv !MMCV_VER! ^(!TORCH_CHANNEL! / !MMCV_TORCH_TAG!^)...
+    pip install mmcv==!MMCV_VER! -f https://download.openmmlab.com/mmcv/dist/!TORCH_CHANNEL!/!MMCV_TORCH_TAG!/index.html
 
     echo [SETUP] Installing mmdet, mmpose, mmengine...
     pip install mmdet==3.1.0 mmpose==1.1.0 mmengine
 
+    echo.
     echo [SETUP] Installing chumpy...
+    echo [NOTE] chumpy requires Microsoft Visual C++ Build Tools.
+    echo        If this step fails, install Build Tools from:
+    echo        https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    echo        Select "Desktop development with C++" and re-run setup.bat.
+    echo.
     pip install --no-build-isolation chumpy
+    if errorlevel 1 (
+        echo [WARN] chumpy install failed. MuseTalk blending will be limited.
+        echo        Install Visual Studio C++ Build Tools and re-run setup.bat to fix.
+    )
 
     echo [SETUP] Installing openai-whisper...
     pip install openai-whisper
 
     echo [SETUP] Installing MuseTalk Python requirements...
     pip install -r musetalk\requirements.txt
+) else (
+    echo [INFO] Skipping GPU packages ^(no NVIDIA GPU detected^).
 )
 
 deactivate
 
-REM ── Frontend ─────────────────────────────────────
+REM ── Frontend ──────────────────────────────────────
 
-echo [SETUP] Installing frontend Node dependencies...
+echo.
+echo [SETUP] Installing frontend Node.js dependencies...
 cd frontend
 npm install
 cd ..
 
-REM ── .env ─────────────────────────────────────────
+REM ── .env ──────────────────────────────────────────
 
 if not exist ".env" (
     copy .env.example .env >nul
@@ -112,7 +200,7 @@ echo  Setup complete!
 echo ===================================================
 echo.
 echo  Next steps:
-echo  1. Add your GEMINI_API_KEY to .env
+echo  1. Open .env and add your GEMINI_API_KEY
 echo  2. Copy avatar_idle.mp4 to data\video\ and frontend\public\
 if "!GPU_AVAILABLE!"=="true" (
     echo  3. Run scripts\download_models.bat   ^(~15-20 min, first time only^)
@@ -120,5 +208,10 @@ if "!GPU_AVAILABLE!"=="true" (
 ) else (
     echo  3. Run scripts\run.bat
 )
+echo.
+echo  Optional — face recognition memory ^(PostgreSQL required^):
+echo    Activate venv:  call backend\.venv\Scripts\activate.bat
+echo    Then run:       pip install cmake dlib face_recognition
+echo    Then set DATABASE_URL in .env
 echo.
 pause

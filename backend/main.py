@@ -226,7 +226,7 @@ def _gpu_available() -> bool:
 # ── Admin auth ────────────────────────────────────────────────────────────────
 
 _admin_tokens: dict[str, float] = {}
-_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "vaani_admin_2024")
+_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin2026")
 _TOKEN_TTL = 8 * 3600  # 8 hours
 
 
