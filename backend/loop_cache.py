@@ -65,21 +65,54 @@ class LoopCache:
                 coords, frame_list = get_landmark_and_bbox(raw_frames, bbox_shift=0)
             finally:
                 os.chdir(_old_cwd)
+            # If DWPose returned no valid coords, fall through to OpenCV
+            if not coords or all(c is None for c in coords):
+                raise ValueError("DWPose returned no face coords")
             self.full_frames = frame_list
             self.bboxes = coords
             self.face_crops = self._crop_faces(frame_list, coords)
             print(f"[SETUP] Face detection complete. {len(self.face_crops)} crops cached.")
         except Exception as e:
-            print(f"[SETUP] Face detection failed: {e}")
-            print("[SETUP] Falling back to full-frame mode (lower quality)")
-            self.full_frames = raw_frames
-            h, w = raw_frames[0].shape[:2]
-            self.bboxes = [(0, 0, w, h)] * len(raw_frames)
-            self.face_crops = [cv2.resize(f, (256, 256)) for f in raw_frames]
+            print(f"[SETUP] DWPose face detection failed: {e}")
+            print("[SETUP] Trying OpenCV face detection fallback...")
+            try:
+                coords = self._detect_faces_opencv(raw_frames)
+                frame_list = raw_frames
+                print("[SETUP] OpenCV face detection succeeded")
+            except Exception as e2:
+                print(f"[SETUP] OpenCV detection also failed: {e2}")
+                print("[SETUP] Falling back to full-frame mode")
+                self.full_frames = raw_frames
+                h, w = raw_frames[0].shape[:2]
+                self.bboxes = [(0, 0, w, h)] * len(raw_frames)
+                self.face_crops = [cv2.resize(f, (256, 256)) for f in raw_frames]
+                self.frame_count = len(self.full_frames)
+                self._loaded = True
+                print(f"[SETUP] Loop cache ready with {self.frame_count} frames")
+                return
 
         self.frame_count = len(self.full_frames)
         self._loaded = True
         print(f"[SETUP] Loop cache ready with {self.frame_count} frames")
+
+    def _detect_faces_opencv(self, frames: list) -> list:
+        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        detector = cv2.CascadeClassifier(cascade_path)
+        coords = []
+        for frame in frames:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+            if len(faces) > 0:
+                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                pad = int(min(w, h) * 0.25)
+                x1 = max(0, x - pad)
+                y1 = max(0, y - pad)
+                x2 = min(frame.shape[1], x + w + pad)
+                y2 = min(frame.shape[0], y + h + pad)
+                coords.append((x1, y1, x2, y2))
+            else:
+                coords.append(None)
+        return coords
 
     def _crop_faces(self, frames, coords):
         crops = []
