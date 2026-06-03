@@ -9,6 +9,7 @@ import { BootSequence }       from './components/BootSequence'
 import { ParticleCanvas }     from './components/ParticleCanvas'
 import { AvatarDisplay }      from './components/AvatarDisplay'
 import { Avatar3D }           from './components/Avatar3D'
+import { PinScreenAvatar }    from './components/PinScreenAvatar'
 import { TranscriptOverlay }  from './components/TranscriptOverlay'
 import { HUDReadout }         from './components/HUDReadout'
 import { Header }             from './components/Header'
@@ -420,7 +421,13 @@ function MainApp() {
       >
         {/* Avatar + HUD */}
         <div className="avatar-stage" style={{ position: 'relative' }}>
-          {botConfig?.render_mode === '3d' ? (
+          {botConfig?.render_mode === 'pinscreen' ? (
+            <PinScreenAvatar
+              appState={appState}
+              getLevel={audioPlayback.getLevel}
+              imageUrl={botConfig?.pinscreen_image_url || null}
+            />
+          ) : botConfig?.render_mode === '3d' ? (
             <Avatar3D
               appState={appState}
               getLevel={audioPlayback.getLevel}

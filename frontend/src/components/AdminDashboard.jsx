@@ -428,6 +428,7 @@ function ModelSection({ draft, onChange, token }) {
 const RENDER_MODES = [
   { id: 'musetalk', label: 'MuseTalk (2D lip-sync, GPU)' },
   { id: '3d', label: '3D Avatar (browser, instant)' },
+  { id: 'pinscreen', label: 'Pin-Screen Face (browser, instant)' },
 ]
 
 function AvatarSection({ draft, onChange }) {
@@ -445,6 +446,14 @@ function AvatarSection({ draft, onChange }) {
           <Input id="avatar_3d_url" value={draft.avatar_3d_url}
             onChange={v => onChange('avatar_3d_url', v)}
             placeholder="https://models.readyplayer.me/your-avatar.glb" />
+        </FieldGroup>
+      )}
+      {renderMode === 'pinscreen' && (
+        <FieldGroup>
+          <Label htmlFor="pinscreen_image_url">Pin-Screen Portrait URL (grayscale, optional)</Label>
+          <Input id="pinscreen_image_url" value={draft.pinscreen_image_url}
+            onChange={v => onChange('pinscreen_image_url', v)}
+            placeholder="https://example.com/portrait.png" />
         </FieldGroup>
       )}
       <FieldGroup>

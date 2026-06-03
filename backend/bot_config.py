@@ -36,13 +36,14 @@ BOT_DEFAULTS: dict = {
     "avatar_video_url":  None,
     "render_mode":       "musetalk",
     "avatar_3d_url":     "",
+    "pinscreen_image_url": "",
     "welcome_message":   "",
     "created_at":        None,
     "updated_at":        None,
 }
 
 _ALLOWED_VOICES = {"Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Perseus"}
-_ALLOWED_RENDER_MODES = {"musetalk", "3d"}
+_ALLOWED_RENDER_MODES = {"musetalk", "3d", "pinscreen"}
 _ALLOWED_MODELS = {
     "gemini-3.1-flash-live-preview",
     "gemini-2.0-flash-live-001",
@@ -223,7 +224,8 @@ def public_view(bot: Optional[dict] = None) -> dict:
     return {k: bot.get(k) for k in (
         "id", "company_name", "company_tagline", "logo_url", "primary_color",
         "agent_name", "agent_role", "default_language", "supported_languages",
-        "avatar_video_url", "render_mode", "avatar_3d_url", "welcome_message",
+        "avatar_video_url", "render_mode", "avatar_3d_url", "pinscreen_image_url",
+        "welcome_message",
     )}
 
 

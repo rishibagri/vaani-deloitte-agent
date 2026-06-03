@@ -41,6 +41,13 @@
   --state-speaking:  var(--blue);
   --state-error:     var(--error);
 
+  /* ── Pin-screen avatar palette (JS mirrors these in PinScreenAvatar.jsx) ── */
+  --pin-idle:        #3D5A8A;
+  --pin-listening:   #86BC25;
+  --pin-thinking:    #F5A623;
+  --pin-speaking:    #00E0FF;
+  --pin-recess-glow: #FF6A2A;
+
   /* ── Avatar glow — box-shadow only, smooth 600ms ── */
   --glow-listening:
     0 0 0 4px rgba(134,188,37,0.22),

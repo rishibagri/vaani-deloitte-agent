@@ -78,14 +78,15 @@ def _resolve_avatar_video() -> Path:
 async def ensure_avatar_loaded():
     """Rebuild the loop cache + latents for the active bot's avatar if it changed.
 
-    In '3d' render mode the browser renders the head, so the backend does no
-    lip-sync: skip MuseTalk + the loop cache entirely. In 'musetalk' mode, make
-    sure the (lazily-loaded) models are ready before building the loop cache.
+    In any non-'musetalk' render mode (e.g. '3d', 'pinscreen') the browser
+    renders the face, so the backend does no lip-sync: skip MuseTalk + the loop
+    cache entirely. In 'musetalk' mode, make sure the (lazily-loaded) models are
+    ready before building the loop cache.
     """
     global _loaded_avatar_sig
     if not MUSETALK_ENABLED:
         return
-    if _active_render_mode() == "3d":
+    if _active_render_mode() != "musetalk":
         return
     await _ensure_musetalk_loaded()
     if not musetalk.loaded:
@@ -134,10 +135,11 @@ async def lifespan(app: FastAPI):
 
     if not MUSETALK_ENABLED:
         print("[SETUP] MuseTalk disabled. Avatar will show loop video only.")
-    elif _active_render_mode() == "3d":
-        # 3D mode: the browser renders the head and the backend only streams
-        # audio — skip MuseTalk model load + loop cache build for instant startup.
-        print("[SETUP] Active bot is in 3D render mode. Skipping MuseTalk (instant startup).")
+    elif _active_render_mode() != "musetalk":
+        # Browser render modes (3D / pin-screen): the browser renders the face
+        # and the backend only streams audio — skip MuseTalk model load + loop
+        # cache build for instant startup.
+        print(f"[SETUP] Active bot is in '{_active_render_mode()}' render mode. Skipping MuseTalk (instant startup).")
     else:
         # MuseTalk mode: models load lazily on the first session via
         # ensure_avatar_loaded(), which also builds the loop cache + latents.
