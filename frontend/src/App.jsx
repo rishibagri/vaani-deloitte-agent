@@ -10,6 +10,7 @@ import { ParticleCanvas }     from './components/ParticleCanvas'
 import { AvatarDisplay }      from './components/AvatarDisplay'
 import { Avatar3D }           from './components/Avatar3D'
 import { PinScreenAvatar }    from './components/PinScreenAvatar'
+import { PinWallStage }       from './components/PinWallStage'
 import { TranscriptOverlay }  from './components/TranscriptOverlay'
 import { HUDReadout }         from './components/HUDReadout'
 import { Header }             from './components/Header'
@@ -381,10 +382,12 @@ function MainApp() {
   const userText = isRecording ? userInterim : userFinalText
 
   const mainVisible = bootDone
+  const isPinWall = botConfig?.render_mode === 'pinscreen'
+  const micDisabled = !geminiReady || appState === 'thinking' || connected !== 'connected'
 
   return (
     <>
-      <ParticleCanvas appState={appState} />
+      {!isPinWall && <ParticleCanvas appState={appState} />}
 
       {!bootDone && (
         <BootSequence onComplete={() => setBootDone(true)} />
@@ -394,6 +397,27 @@ function MainApp() {
         <ConnectingOverlay connected={connected} geminiReady={geminiReady} />
       )}
 
+      {isPinWall ? (
+        bootDone && (
+          <PinWallStage
+            appState={appState}
+            connected={connected}
+            currentLang={currentLang}
+            onLanguageChange={handleLanguageChange}
+            getLevel={audioPlayback.getLevel}
+            imageUrl={botConfig?.pinscreen_image_url || null}
+            isRecording={isRecording}
+            onMicStart={handleMicStart}
+            onMicStop={handleMicStop}
+            micDisabled={micDisabled}
+            agentText={agentText}
+            userText={userText}
+            isStreaming={isStreaming}
+            sessionRunning={sessionRunning}
+          />
+        )
+      ) : (
+      <>
       <Header
         connected={connected}
         onLanguageChange={handleLanguageChange}
@@ -474,6 +498,8 @@ function MainApp() {
         userText={userText}
         currentLang={detectedLanguage?.code || currentLang}
       />
+      </>
+      )}
 
       <ToastContainer />
 

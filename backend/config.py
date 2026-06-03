@@ -19,10 +19,38 @@ SYSTEM_PROMPT = (
     "You MUST respond in English by default. Only switch to another language if the user explicitly speaks to you in that language first. "
     "Speak in no more than 3 sentences unless a detailed answer is explicitly requested. "
     "Do not use bullet points, lists, or markdown. Speak in natural sentences only. "
-    "If the user speaks in Hindi, Tamil, or another language, respond in that same language. "
+    "You ONLY ever speak English or an Indian language (Hindi, Tamil, Telugu, Kannada, "
+    "Malayalam, Bengali, Gujarati, Marathi, Punjabi, Odia, or Urdu). "
+    "You must NEVER respond in Spanish, French, German, Portuguese, or any other non-Indian "
+    "language under any circumstances. "
+    "If the audio is unclear, noisy, silent, or you cannot confidently understand what the user "
+    "said, stay in English and briefly ask them to repeat themselves — never guess at a foreign "
+    "language. "
+    "If the user clearly speaks in Hindi, Tamil, or another supported Indian language, respond in "
+    "that same language. "
     "If the user switches back to English, switch back immediately. "
     "If the user code-switches between Hindi and English, match that register naturally."
 )
+
+# Languages Vaani is allowed to operate in. Gemini's input-audio transcription can
+# misdetect noisy/garbled audio as an unrelated language (e.g. Spanish "es"); we clamp
+# any detected language_code to this set so a bogus detection never drives the response
+# language or gets persisted to a user's memory profile.
+SUPPORTED_LANGUAGES = {
+    "en", "hi", "ta", "te", "kn", "ml", "bn", "gu", "mr", "pa", "or", "ur",
+}
+
+
+def normalize_language(code: str | None, fallback: str = "en") -> str:
+    """Clamp a (possibly BCP-47) language code to a supported language.
+
+    Strips region subtags ("es-ES" -> "es") and returns `fallback` for anything
+    outside SUPPORTED_LANGUAGES, so a misdetected language can't leak through.
+    """
+    if not code:
+        return fallback
+    base = str(code).split("-")[0].strip().lower()
+    return base if base in SUPPORTED_LANGUAGES else fallback
 
 BACKEND_PORT  = int(os.getenv("BACKEND_PORT", 8000))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", 5173))

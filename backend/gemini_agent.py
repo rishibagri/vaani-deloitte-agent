@@ -4,7 +4,9 @@ import time
 from google import genai
 from google.genai import types
 
-from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VOICE, SYSTEM_PROMPT
+from config import (
+    GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VOICE, SYSTEM_PROMPT, normalize_language,
+)
 
 
 class GeminiAgent:
@@ -174,7 +176,12 @@ class GeminiAgent:
 
                 in_t = getattr(sc, "input_transcription", None)
                 if in_t and getattr(in_t, "text", None):
-                    lang = getattr(in_t, "language_code", self.language)
+                    # Clamp to a supported language — noisy audio can be misdetected as
+                    # an unrelated language (e.g. Spanish). Fall back to the session's
+                    # current language so a bad detection never drives responses or memory.
+                    lang = normalize_language(
+                        getattr(in_t, "language_code", None), fallback=self.language
+                    )
                     self.transcript.append({"role": "user", "text": in_t.text})
                     await self.output_queue.put({
                         "type": "transcript_user",

@@ -25,7 +25,21 @@
       "Bash(echo \"exit: $?\")",
       "Bash(npx vite *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(claude mcp *)",
+      "mcp__stitch__list_projects",
+      "mcp__stitch__list_screens",
+      "Bash(curl -sL \"https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sX2ViZTlhYmVkYTU1ZDRhNzJhMmZiMDEzN2E1ZGE1ZjlkEgsSBxDfltqWvQkYAZIBIwoKcHJvamVjdF9pZBIVQhM2MTY5NTczMzUyMTcxMTA3OTE1&filename=&opi=89354086\" -o /tmp/pinwall.html)",
+      "Read(//tmp/**)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('config.py'\\).read\\(\\)\\); ast.parse\\(open\\('gemini_agent.py'\\).read\\(\\)\\); print\\('OK: both files parse'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone *)",
+      "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/ui-ux-pro-max /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-main)",
+      "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/design /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-design)",
+      "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/ui-styling /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-styling)"
     ]
   }
 }
