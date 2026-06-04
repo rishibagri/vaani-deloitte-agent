@@ -10,22 +10,22 @@ const HEX_SVG = encodeURIComponent(
 const HEX_BG = `url("data:image/svg+xml,${HEX_SVG}")`
 
 /* Ambient wash color per conversation state — the room breathes with Vaani.
-   Kept low-alpha so it frames the avatar without competing with it. */
+   Strictly Deloitte Green and neutral tones. */
 const STATE_GLOW = {
-  idle:      'rgba(1,33,105,0.0)',
-  listening: 'rgba(134,188,37,0.16)',
-  thinking:  'rgba(245,166,35,0.14)',
-  speaking:  'rgba(0,163,224,0.18)',
-  error:     'rgba(255,68,68,0.12)',
+  idle:      'rgba(134,188,37,0.0)',
+  listening: 'rgba(134,188,37,0.15)',
+  thinking:  'rgba(134,188,37,0.08)',
+  speaking:  'rgba(134,188,37,0.12)',
+  error:     'rgba(255,68,68,0.08)',
 }
 
 function CornerBracket({ corner }) {
   const base = { position: 'fixed', width: 40, height: 40, pointerEvents: 'none', zIndex: 2 }
   const style = {
-    'top-left':     { ...base, top: 0,    left: 0,    borderTop:    '1px solid rgba(134,188,37,0.25)', borderLeft:   '1px solid rgba(134,188,37,0.25)' },
-    'top-right':    { ...base, top: 0,    right: 0,   borderTop:    '1px solid rgba(134,188,37,0.25)', borderRight:  '1px solid rgba(134,188,37,0.25)' },
-    'bottom-left':  { ...base, bottom: 0, left: 0,    borderBottom: '1px solid rgba(134,188,37,0.25)', borderLeft:   '1px solid rgba(134,188,37,0.25)' },
-    'bottom-right': { ...base, bottom: 0, right: 0,   borderBottom: '1px solid rgba(134,188,37,0.25)', borderRight:  '1px solid rgba(134,188,37,0.25)' },
+    'top-left':     { ...base, top: 0,    left: 0,    borderTop:    '1px solid rgba(134,188,37,0.15)', borderLeft:   '1px solid rgba(134,188,37,0.15)' },
+    'top-right':    { ...base, top: 0,    right: 0,   borderTop:    '1px solid rgba(134,188,37,0.15)', borderRight:  '1px solid rgba(134,188,37,0.15)' },
+    'bottom-left':  { ...base, bottom: 0, left: 0,    borderBottom: '1px solid rgba(134,188,37,0.15)', borderLeft:   '1px solid rgba(134,188,37,0.15)' },
+    'bottom-right': { ...base, bottom: 0, right: 0,   borderBottom: '1px solid rgba(134,188,37,0.15)', borderRight:  '1px solid rgba(134,188,37,0.15)' },
   }[corner]
   return <div aria-hidden="true" style={style} />
 }
@@ -36,7 +36,7 @@ export function ParticleCanvas({ appState }) {
 
   return (
     <>
-      {/* Deep radial background */}
+      {/* Pure Obsidian Void Background */}
       <div
         aria-hidden="true"
         style={{
@@ -44,12 +44,11 @@ export function ParticleCanvas({ appState }) {
           inset: 0,
           zIndex: 'var(--z-bg)',
           pointerEvents: 'none',
-          background: 'radial-gradient(ellipse 120% 80% at 50% 0%, #012169 0%, #010A1A 100%)',
+          background: 'radial-gradient(circle at 50% 40%, #080B04 0%, #020400 60%, #000000 100%)',
         }}
       />
 
-      {/* State-reactive ambient wash — centered behind the avatar, shifts color
-          with the conversation state and fades back to nothing when idle. */}
+      {/* Brand accent wash — Deloitte Green glow that reacts to state */}
       <div
         aria-hidden="true"
         style={{
@@ -57,8 +56,27 @@ export function ParticleCanvas({ appState }) {
           inset: 0,
           zIndex: 'var(--z-bg)',
           pointerEvents: 'none',
-          background: `radial-gradient(ellipse 70% 60% at 50% 44%, ${STATE_GLOW[appState] || STATE_GLOW.idle} 0%, transparent 70%)`,
-          transition: 'background 900ms var(--ease-standard)',
+          background: `radial-gradient(ellipse 80% 70% at 50% 50%, ${STATE_GLOW[appState] || STATE_GLOW.idle} 0%, transparent 75%)`,
+          transition: 'background 1500ms var(--ease-standard)',
+        }}
+      />
+
+      {/* Tech Grid Texture — Subtle green webbing */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 'var(--z-bg)',
+          pointerEvents: 'none',
+          backgroundImage: `
+            linear-gradient(rgba(134,188,37,0.015) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(134,188,37,0.015) 1px, transparent 1px)
+          `,
+          backgroundSize: '80px 80px',
+          opacity: 0.8,
+          maskImage: 'radial-gradient(circle at 50% 50%, black 20%, transparent 85%)',
+          WebkitMaskImage: 'radial-gradient(circle at 50% 50%, black 20%, transparent 85%)',
         }}
       />
 

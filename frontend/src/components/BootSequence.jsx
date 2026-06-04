@@ -66,10 +66,11 @@ function StatusLine({ label, pending, done, visible, flickered }) {
       <span
         style={{
           color: resolved ? '#86BC25' : '#A8C070',
-          minWidth: 78,
+          minWidth: 82,
           textAlign: 'right',
-          transition: 'color 200ms ease-out',
-          textShadow: resolved ? '0 0 12px rgba(134,188,37,0.45)' : 'none',
+          transition: 'color 150ms ease-out',
+          textShadow: resolved ? '0 0 16px rgba(134,188,37,0.65)' : 'none',
+          fontWeight: resolved ? 600 : 400,
         }}
       >
         {displayText}
@@ -157,12 +158,12 @@ export function BootSequence({ onComplete }) {
           position: 'absolute',
           inset: 0,
           backgroundImage:
-            'linear-gradient(90deg, rgba(134,188,37,0.035) 1px, transparent 1px)',
-          backgroundSize: '64px 100%',
-          maskImage: 'radial-gradient(60% 50% at 50% 42%, #000 0%, transparent 78%)',
-          WebkitMaskImage: 'radial-gradient(60% 50% at 50% 42%, #000 0%, transparent 78%)',
-          opacity: stage.mark ? 1 : 0,
-          transition: 'opacity 900ms ease-out',
+            'linear-gradient(90deg, rgba(134,188,37,0.05) 1px, transparent 1px), linear-gradient(rgba(134,188,37,0.02) 1px, transparent 1px)',
+          backgroundSize: '64px 64px',
+          maskImage: 'radial-gradient(60% 50% at 50% 42%, #000 0%, transparent 85%)',
+          WebkitMaskImage: 'radial-gradient(60% 50% at 50% 42%, #000 0%, transparent 85%)',
+          opacity: stage.mark ? 0.6 : 0,
+          transition: 'opacity 1200ms ease-out',
           pointerEvents: 'none',
         }}
       />

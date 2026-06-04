@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react'
-import { Lipsync } from 'wawa-lipsync'
+import { Lipsync } from '../lib/wawa'
 
 // Gemini outputs 24kHz PCM int16, we play it back at 24kHz
 const PLAYBACK_RATE = 24000
@@ -159,7 +159,11 @@ export function useAudioPlayback() {
     if (!lip) return null
     try {
       lip.processAudio()
-      return { viseme: lip.viseme, volume: lip.features?.volume ?? 0 }
+      return { 
+        viseme: lip.viseme, 
+        scores: lip.scores,
+        volume: lip.features?.volume ?? 0 
+      }
     } catch {
       return null
     }

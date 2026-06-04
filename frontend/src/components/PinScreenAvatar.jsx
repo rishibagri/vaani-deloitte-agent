@@ -15,11 +15,11 @@ const BOXED = {
 }
 
 /* In fill mode the pin field is wide and the face fills almost the whole view.
-   PIN_D is much larger so the relief is dramatically physical. */
+   PIN_D is reduced so the relief is subtle, like a face pressing through the wall. */
 const FILL = {
   cols: 190, rows: 105,  // denser grid → ~9px pins vs ~17px before
   fieldW: 4.6, fieldH: 2.3,
-  pinD: 0.82,
+  pinD: 0.35,            // significantly reduced from 0.82 for a bas-relief look
   fill: true,
   camera: { fov: 26, near: 0.1, far: 100, position: [0, 0, 3.4] },
 }
@@ -415,19 +415,22 @@ faceH *= radialMask;
 
 // ── MOUTH: a smooth elliptical opening ───────────────────────────────────────
 // Modelled as an ellipse whose HEIGHT grows with uMouthOpen. Closed = a thin
-// horizontal lip line; open = a taller oval. Because it's a single ellipse the
-// lips stay connected at the corners and the opening grows from the middle — no
-// flat bars sliding apart. Smooth gradients (no hard steps) so it doesn't pop on
-// the coarse pin grid.
+// horizontal lip line; open = a taller oval.
 float mx = (uvc.x - uMouthUV.x);
 float my = (uvc.y - uMouthUV.y);
 float W  = 0.050;                                   // mouth half-width
-float Hm = 0.009 + uMouthOpen * 0.024;              // half-height: grows when open
+// Significantly reduced amplitude: opens less wide to handle high viseme scores
+float Hm = 0.009 + uMouthOpen * 0.010;              
+
 float e  = length(vec2(mx / W, my / Hm));           // 1 on the lip outline
 float inside = 1.0 - smoothstep(0.70, 1.00, e);     // mouth interior (recessed/dark)
 float rim    = (1.0 - smoothstep(0.12, 0.46, abs(e - 1.0))) * (1.0 - inside); // the lips
-faceH = mix(faceH, faceH * 0.05, inside);           // recess the opening (dark)
-faceH = mix(faceH, faceH + 0.10, rim);              // raise the lips a touch
+
+// A very shallow recess for the inside of the mouth.
+faceH = mix(faceH, faceH * 0.70, inside);
+// Push the lips outward slightly when speaking for volume, heavily reduced.
+float lipPush = 0.03 + uMouthOpen * 0.05;
+faceH = mix(faceH, faceH + lipPush, rim);              
 faceH = max(faceH, 0.0);
 vUpperLip = rim * step(0.0,  my);                   // (debug colours only)
 vLowerLip = rim * step(0.0, -my);

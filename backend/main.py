@@ -381,7 +381,7 @@ async def test_voice_preview(
         client = _genai.Client(api_key=GEMINI_API_KEY)
         response = await client.aio.models.generate_content(
             model="gemini-2.5-flash-preview-tts",
-            contents=text,
+            contents=f"Please generate audio for the following text: {text}",
             config=_types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
                 speech_config=_types.SpeechConfig(

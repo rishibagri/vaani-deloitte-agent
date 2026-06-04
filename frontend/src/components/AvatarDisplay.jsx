@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 
-const W         = 460   // total container width (ring decorations use this)
-const VID_W     = 380   // video display width
-const VID_H     = 480   // video display height (portrait)
-const VID_LEFT  = (W - VID_W) / 2  // 40 — centers video horizontally
+const W         = 720   // total container width
+const VID_W     = 640   // video display width
+const VID_H     = 800   // video display height
+const VID_LEFT  = (W - VID_W) / 2
+  // 40 — centers video horizontally
 
 const RING_CX   = W / 2
 const RING_CY   = VID_H / 2        // rings orbit around the vertical center of the video
@@ -105,6 +106,8 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
   const fadeTimer = useRef(null)
   const bitmapBuf = useRef(null)
 
+  const [isInitializing, setIsInitializing] = useState(true)
+
   // Expose a way for the parent to instantly clear the MuseTalk canvas (barge-in).
   const clearCanvas = useCallback(() => {
     if (fadeTimer.current) clearTimeout(fadeTimer.current)
@@ -118,6 +121,7 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
   const renderFrame = useCallback((arrayBuffer) => {
     const canvas = canvasRef.current
     if (!canvas) return
+    if (isInitializing) setIsInitializing(false)
     if (fadeTimer.current) clearTimeout(fadeTimer.current)
     canvas.style.opacity = '1'
     createImageBitmap(new Blob([arrayBuffer], { type: 'image/jpeg' }))
@@ -385,6 +389,54 @@ export function AvatarDisplay({ appState, amplitudes = [], onVideoFrame, onClear
           WebkitMaskImage: 'radial-gradient(ellipse 88% 92% at 50% 46%, black 48%, transparent 100%)',
         }}
       />
+
+      {/* ── Initialization Overlay (MuseTalk specific) ── */}
+      {isInitializing && appState !== 'idle' && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: VID_LEFT,
+          width: VID_W,
+          height: VID_H,
+          zIndex: 4,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: '20px',
+          pointerEvents: 'none',
+          animation: 'avatar-reveal 500ms ease both',
+        }}>
+          <div style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10,
+            color: '#86BC25',
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            marginBottom: 12,
+            opacity: 0.8,
+          }}>
+            Neural Link Initializing
+          </div>
+          <div style={{
+            width: 120,
+            height: 1,
+            background: 'linear-gradient(90deg, transparent, #86BC25, transparent)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: '#86BC25',
+              boxShadow: '0 0 10px #86BC25',
+              animation: 'cv-progress 2s linear infinite',
+            }} />
+          </div>
+        </div>
+      )}
 
       {/* ── Circular audio waveform ── */}
       <CircularWaveform amplitudes={amplitudes} visible={appState === 'speaking'} />

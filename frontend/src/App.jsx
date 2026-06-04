@@ -6,6 +6,7 @@ import { useConversation } from './hooks/useConversation'
 import { useFaceCapture }  from './hooks/useFaceCapture'
 
 import { BootSequence }       from './components/BootSequence'
+import { AdvancedConnectingOverlay } from './components/AdvancedConnectingOverlay'
 import { ParticleCanvas }     from './components/ParticleCanvas'
 import { AvatarDisplay }      from './components/AvatarDisplay'
 import { Avatar3D }           from './components/Avatar3D'
@@ -283,6 +284,13 @@ function MainApp() {
     return () => clearTimeout(t)
   }, [identityReady])
 
+  useEffect(() => {
+    document.body.style.background = '#000000'
+    const onForce = () => setGeminiReady(true)
+    window.addEventListener('vaani_force_ready', onForce)
+    return () => window.removeEventListener('vaani_force_ready', onForce)
+  }, [])
+
   /* Step 1 — create session, retry with backoff until backend is ready */
   useEffect(() => {
     let cancelled = false
@@ -402,8 +410,12 @@ function MainApp() {
         <BootSequence onComplete={() => setBootDone(true)} />
       )}
 
-      {bootDone && (connected !== 'connected' || !geminiReady) && (
-        <ConnectingOverlay connected={connected} geminiReady={geminiReady} />
+      {bootDone && (connected !== 'connected' || !geminiReady || !botConfig) && (
+        isPinWall ? (
+          <ConnectingOverlay connected={connected} geminiReady={geminiReady} />
+        ) : (
+          <AdvancedConnectingOverlay connected={connected} geminiReady={geminiReady} mode={botConfig?.render_mode} />
+        )
       )}
 
       {isPinWall ? (
@@ -436,33 +448,50 @@ function MainApp() {
         sessionRunning={sessionRunning}
       />
 
+      {/* Floating Status — Top Left */}
+      <div style={{ position: 'fixed', top: 100, left: 40, zIndex: 100, opacity: mainVisible ? 1 : 0, transition: 'opacity 500ms' }}>
+        <StatusBadge appState={appState} connected={connected} />
+      </div>
+
+      {/* Branding Label — Top Right */}
+      <div style={{
+        position: 'fixed', top: 100, right: 40, zIndex: 100,
+        textAlign: 'right', opacity: mainVisible ? 0.6 : 0, transition: 'opacity 500ms'
+      }}>
+        <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, color: '#86BC25', letterSpacing: '0.2em' }}>
+          DELOITTE DCIT
+        </div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'white', letterSpacing: '0.1em' }}>
+          AVATAR SYSTEMS · INDIA
+        </div>
+      </div>
+
       <main
         role="main"
         style={{
-          position: 'relative',
+          position: 'fixed',
+          inset: 0,
           zIndex: 'var(--z-content)',
-          minHeight: '100vh',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          paddingTop: 'var(--header-height)',
-          paddingBottom: 120,
-          gap: 28,
+          pointerEvents: 'none',
           opacity: mainVisible ? 1 : 0,
-          transform: mainVisible ? 'scale(1)' : 'scale(0.96)',
-          transition: 'opacity 500ms var(--ease-out-quart), transform 500ms var(--ease-out-quart)',
+          transform: mainVisible ? 'scale(1)' : 'scale(0.98)',
+          transition: 'opacity 800ms var(--ease-out-quart), transform 800ms var(--ease-out-quart)',
         }}
       >
         {/* Avatar + HUD */}
-        <div className="avatar-stage" style={{ position: 'relative' }}>
-          {botConfig?.render_mode === 'pinscreen' ? (
-            <PinScreenAvatar
-              appState={appState}
-              getLevel={audioPlayback.getLevel}
-              imageUrl={botConfig?.pinscreen_image_url || null}
-            />
-          ) : botConfig?.render_mode === '3d' ? (
+        <div className="avatar-stage" style={{ 
+          position: 'relative', 
+          width: 720, height: 800,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'auto',
+        }}>
+          {botConfig?.render_mode === '3d' ? (
             <Avatar3D
               appState={appState}
               getLevel={audioPlayback.getLevel}
@@ -478,17 +507,19 @@ function MainApp() {
               avatarSrc={botConfig?.avatar_video_url || null}
             />
           )}
-
-          <div style={{ display: 'contents' }} className="hud-layer">
-            <HUDReadout position="top-left"     appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
-            <HUDReadout position="top-right"    appState={appState} currentLang={detectedLanguage?.code || currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
-            <HUDReadout position="bottom-left"  appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
-            <HUDReadout position="bottom-right" appState={appState} currentLang={currentLang} sessionRunning={sessionRunning} bootDone={bootDone} />
-          </div>
         </div>
 
-        <StatusBadge appState={appState} connected={connected} />
+        <div style={{ marginTop: 20, pointerEvents: 'auto' }}>
+          <QuickReplies
+            suggestions={suggestions}
+            onSelect={handleQuickReply}
+            visible={showSuggestions && suggestions.length > 0}
+          />
+        </div>
+      </main>
 
+      {/* Mic Button — Floating Bottom Right */}
+      <div style={{ position: 'fixed', bottom: 40, right: 40, zIndex: 200, opacity: mainVisible ? 1 : 0, transition: 'opacity 500ms' }}>
         <MicButton
           isRecording={isRecording}
           isDisabled={!geminiReady || appState === 'thinking' || connected !== 'connected'}
@@ -496,20 +527,19 @@ function MainApp() {
           onStop={handleMicStop}
           appState={appState}
         />
+      </div>
 
-        <QuickReplies
-          suggestions={suggestions}
-          onSelect={handleQuickReply}
-          visible={showSuggestions && suggestions.length > 0}
-        />
-      </main>
-
-      <TranscriptOverlay
-        agentText={agentText}
-        isStreaming={isStreaming}
-        userText={userText}
-        currentLang={detectedLanguage?.code || currentLang}
-      />
+      {/* Transcript Overlay — Bottom Left Alignment */}
+      <div style={{ position: 'fixed', bottom: 40, left: 40, zIndex: 200, pointerEvents: 'none', opacity: mainVisible ? 1 : 0, transition: 'opacity 500ms' }}>
+        <div style={{ maxWidth: 640, pointerEvents: 'auto' }}>
+          <TranscriptOverlay
+            agentText={agentText}
+            isStreaming={isStreaming}
+            userText={userText}
+            currentLang={detectedLanguage?.code || currentLang}
+          />
+        </div>
+      </div>
       </>
       )}
 
