@@ -1,4 +1,5 @@
 import { useRef, useCallback } from 'react'
+import { Lipsync } from 'wawa-lipsync'
 
 // Gemini outputs 24kHz PCM int16, we play it back at 24kHz
 const PLAYBACK_RATE = 24000
@@ -9,6 +10,7 @@ export function useAudioPlayback() {
   const analyserRef   = useRef(null)
   const dataRef       = useRef(null)
   const freqRef       = useRef(null)
+  const lipsyncRef    = useRef(null)   // wawa-lipsync (Oculus visemes for the 3D avatar)
 
   const ensureContext = useCallback(() => {
     if (!contextRef.current || contextRef.current.state === 'closed') {
@@ -24,6 +26,28 @@ export function useAudioPlayback() {
       analyserRef.current = analyser
       dataRef.current = new Uint8Array(analyser.fftSize)
       freqRef.current = new Uint8Array(analyser.frequencyBinCount)
+
+      // wawa-lipsync drives the 3D avatar's Oculus visemes. The library normally
+      // wants an <audio> element + its own AudioContext; instead we rebind its
+      // analyser onto OUR playback context and feed it in parallel off our analyser
+      // (no output connection → audio isn't doubled). The pin wall is unaffected —
+      // it keeps using getVisemes()/getLevel() on the original analyser.
+      try {
+        const lip = new Lipsync({ fftSize: 2048, historySize: 10 })
+        const wawaAnalyser = ctx.createAnalyser()
+        wawaAnalyser.fftSize = 2048
+        wawaAnalyser.smoothingTimeConstant = 0.5
+        lip.audioContext = ctx
+        lip.analyser = wawaAnalyser
+        lip.dataArray = new Uint8Array(wawaAnalyser.frequencyBinCount)
+        lip.sampleRate = ctx.sampleRate
+        lip.binWidth = ctx.sampleRate / 2048
+        analyser.connect(wawaAnalyser)
+        lipsyncRef.current = lip
+      } catch (e) {
+        console.warn('[useAudioPlayback] wawa-lipsync init failed:', e?.message || e)
+        lipsyncRef.current = null
+      }
     }
     if (contextRef.current.state === 'suspended') {
       contextRef.current.resume()
@@ -60,6 +84,7 @@ export function useAudioPlayback() {
       analyserRef.current = null
       dataRef.current = null
       freqRef.current = null
+      lipsyncRef.current = null
     }
   }, [])
 
@@ -122,5 +147,23 @@ export function useAudioPlayback() {
     }
   }, [])
 
-  return { enqueue, stop, getLevel, getVisemes }
+  /**
+   * getLipsync() — wawa-lipsync analysis for the 3D avatar (Oculus visemes).
+   * Returns the dominant viseme name + current volume, e.g.
+   *   { viseme: 'viseme_aa', volume: 0.42 }
+   * Call once per render frame. Separate from getVisemes() so the pin wall's
+   * FFT-based weights stay exactly as they were.
+   */
+  const getLipsync = useCallback(() => {
+    const lip = lipsyncRef.current
+    if (!lip) return null
+    try {
+      lip.processAudio()
+      return { viseme: lip.viseme, volume: lip.features?.volume ?? 0 }
+    } catch {
+      return null
+    }
+  }, [])
+
+  return { enqueue, stop, getLevel, getVisemes, getLipsync }
 }

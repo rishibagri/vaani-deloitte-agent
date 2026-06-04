@@ -1,31 +1,24 @@
 import { Suspense, Component, useRef, useMemo, useEffect, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF, useAnimations, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
-
-/* Matches the AvatarDisplay footprint so the HUD rings line up. */
-const W = 460
-const H = 480
 
 const DEFAULT_GLB = 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb'
 
-/* Per-state glow color (matches design tokens). */
+/* The 15 Oculus visemes wawa-lipsync emits — all present on this Avaturn rig. */
+const VISEMES = [
+  'viseme_PP', 'viseme_FF', 'viseme_TH', 'viseme_DD', 'viseme_kk',
+  'viseme_CH', 'viseme_SS', 'viseme_nn', 'viseme_RR',
+  'viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U',
+]
+
 function stateColorHex(appState) {
   return {
-    idle:      '#3D5A8A', // dim navy/blue
-    listening: '#86BC25', // brand green
-    thinking:  '#F5A623', // amber
-    speaking:  '#00E0FF', // bright cyan
+    idle:      '#3D5A8A',
+    listening: '#86BC25',
+    thinking:  '#F5A623',
+    speaking:  '#00E0FF',
   }[appState] || '#3D5A8A'
-}
-
-function glowRgba(appState) {
-  return {
-    idle:      'rgba(61,90,138,0.22)',
-    listening: 'rgba(134,188,37,0.30)',
-    thinking:  'rgba(245,166,35,0.26)',
-    speaking:  'rgba(0,200,255,0.34)',
-  }[appState] || 'rgba(61,90,138,0.22)'
 }
 
 const prefersReducedMotion =
@@ -34,361 +27,187 @@ const prefersReducedMotion =
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Holographic head — loads the GLB, applies a translucent cyan/fresnel shader,
-   bobs gently, reacts to state color, and lip-syncs from live audio level.
+   Full-body avatar: loads the Avaturn GLB with its real materials, plays the
+   embedded idle animation (natural pose — not the A-pose bind), frames the whole
+   body, blinks, and lip-syncs from wawa-lipsync's Oculus visemes.
 ─────────────────────────────────────────────────────────────────────────── */
-function HoloHead({ appState, getLevel, getVisemes, url, glowRef }) {
-  const { scene } = useGLTF(url)
-  const groupRef = useRef()
+function AvatarFigure({ appState, getLevel, getLipsync, url }) {
+  const { scene, animations } = useGLTF(url)
+  const rootRef = useRef()
+  const { actions } = useAnimations(animations, rootRef)
   const { camera } = useThree()
 
-  // Smoothed values (refs to avoid re-renders each frame).
-  const targetColor = useRef(new THREE.Color(stateColorHex(appState)))
-  const currentColor = useRef(new THREE.Color(stateColorHex(appState)))
-  const mouthRef = useRef(0)
-  const levelRef = useRef(0)       // smoothed voice energy
-  const flickerRef = useRef(0)     // one-shot materialize flicker (1 → 0)
-  const prevState = useRef(appState)
+  const openRef      = useRef(0)        // smoothed mouth openness
+  const blinkNextRef = useRef(2)
+  const blinkStartRef = useRef(-10)
 
-  useEffect(() => {
-    targetColor.current.set(stateColorHex(appState))
-    // Fire a one-shot "materialize" flicker when Vaani starts speaking.
-    if (appState === 'speaking' && prevState.current !== 'speaking' && !prefersReducedMotion) {
-      flickerRef.current = 1
-    }
-    prevState.current = appState
-  }, [appState])
-
-  // Collect morph-target meshes (RPM head/teeth) for lip-sync.
+  // Morph-bearing meshes (Head/Teeth/Tongue → visemes; Head/EyeAO/Eyelash → blink).
   const morphMeshes = useMemo(() => {
     const list = []
     scene.traverse((o) => {
-      if (o.isMesh && o.morphTargetDictionary && o.morphTargetInfluences) {
-        list.push(o)
-      }
+      if (o.isMesh && o.morphTargetDictionary && o.morphTargetInfluences) list.push(o)
     })
     return list
   }, [scene])
 
-  // Apply holographic material to every mesh and frame the head.
-  const holoMaterial = useMemo(() => {
-    const mat = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(stateColorHex(appState)),
-      emissive: new THREE.Color(stateColorHex(appState)),
-      emissiveIntensity: 0.55,
-      transparent: true,
-      opacity: 0.85,
-      roughness: 0.25,
-      metalness: 0.1,
-      transmission: 0.2,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-    // Fresnel rim glow via onBeforeCompile.
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uRimColor = { value: new THREE.Color(stateColorHex(appState)) }
-      shader.uniforms.uLevel = { value: 0 }   // live voice energy 0..1
-      shader.uniforms.uTime  = { value: 0 }
-      mat.userData.shader = shader
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-           uniform vec3 uRimColor;
-           uniform float uLevel;
-           uniform float uTime;
-           varying vec3 vWorldNormalR;
-           varying vec3 vWorldPosR;`
-        )
-        .replace(
-          '#include <emissivemap_fragment>',
-          `#include <emissivemap_fragment>
-           vec3 viewDirR = normalize(cameraPosition - vWorldPosR);
-           float fresnel = pow(1.0 - clamp(dot(viewDirR, normalize(vWorldNormalR)), 0.0, 1.0), 2.5);
-           // Rim glow surges with the voice — the head "channels energy" as it speaks.
-           float rimBoost = 2.2 + uLevel * 4.0;
-           totalEmissiveRadiance += uRimColor * fresnel * rimBoost;
-           // Holographic scanlines that drift upward and intensify with the voice.
-           float scan = (0.90 - uLevel * 0.06) + (0.10 + uLevel * 0.10) * sin(vWorldPosR.y * 140.0 - uTime * 2.5);
-           totalEmissiveRadiance *= scan;`
-        )
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-           varying vec3 vWorldNormalR;
-           varying vec3 vWorldPosR;`
-        )
-        .replace(
-          '#include <worldpos_vertex>',
-          `#include <worldpos_vertex>
-           vWorldNormalR = mat3(modelMatrix) * normal;
-           vWorldPosR = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-        )
-    }
-    return mat
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // Play the embedded idle animation → natural standing pose.
   useEffect(() => {
-    scene.traverse((o) => {
-      if (o.isMesh) {
-        o.material = holoMaterial
-        o.frustumCulled = false
-      }
-    })
+    const first = actions && Object.values(actions)[0]
+    if (first) {
+      first.reset().fadeIn(0.4).play()
+      first.setLoop(THREE.LoopRepeat, Infinity)
+    }
+    return () => { if (first) first.fadeOut(0.2) }
+  }, [actions])
 
-    // Frame the head: compute the head bone / upper bounding box and aim the
-    // camera at it so we get a floating bust.
+  // Frame the FULL BODY: feet on the ground (y=0), camera pulled back to see all of it.
+  useEffect(() => {
+    scene.traverse((o) => { if (o.isMesh) o.frustumCulled = false })
     const box = new THREE.Box3().setFromObject(scene)
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
+    const size = new THREE.Vector3(); box.getSize(size)
+    const center = new THREE.Vector3(); box.getCenter(center)
 
-    // RPM half-body: the head sits near the top of the bounding box.
-    const headY = box.max.y - size.y * 0.12
-    // Re-center the model so the head is at origin height.
-    scene.position.y = -headY
-    scene.position.x = -center.x
+    // Stand the model on the ground plane and center it horizontally.
+    scene.position.set(-center.x, -box.min.y, -center.z)
 
-    camera.position.set(0, 0, 1.05)
-    camera.lookAt(0, 0, 0)
+    // Pull back so the whole body reads at a comfortable scale with room around it
+    // (not filling the frame). fov 30° needs ~1.87·h to just fit; 2.6·h leaves margin.
+    const h = size.y
+    camera.position.set(0, h * 0.55, h * 2.6)
+    camera.lookAt(0, h * 0.50, 0)
     camera.updateProjectionMatrix()
-  }, [scene, holoMaterial, camera])
+  }, [scene, camera])
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime
+    const speaking = appState === 'speaking'
 
-    // Smooth idle bob / sway.
-    if (groupRef.current) {
-      if (prefersReducedMotion) {
-        groupRef.current.position.y = 0
-        groupRef.current.rotation.y = 0
-      } else {
-        groupRef.current.position.y = Math.sin(t * 0.8) * 0.012
-        groupRef.current.rotation.y = Math.sin(t * 0.35) * 0.12
-        groupRef.current.rotation.x = Math.sin(t * 0.5) * 0.03
-      }
+    // Openness from audio amplitude (smoothed). Kept GENTLE + capped so the mouth
+    // articulates like real speech instead of gaping open. Real jawOpen for talking
+    // sits ~0.15–0.30; vowels peak a touch higher — never a yawn.
+    const rawOpen = (speaking && getLevel)
+      ? THREE.MathUtils.clamp(getLevel() * 2.3, 0, 0.95) : 0
+    openRef.current += (rawOpen - openRef.current) * Math.min(1, delta * 14)
+    const openness = openRef.current
+
+    // wawa dominant viseme → lip SHAPE (rounding / spread) on top of the openness.
+    const lip = (speaking && getLipsync) ? getLipsync() : null
+    const dominant = lip ? lip.viseme : 'viseme_sil'
+
+    // Blink scheduling.
+    if (!prefersReducedMotion && t > blinkNextRef.current) {
+      blinkStartRef.current = t
+      blinkNextRef.current = t + 2.4 + Math.random() * 3.6
     }
+    const bt = t - blinkStartRef.current
+    const blink = (!prefersReducedMotion && bt < 0.18) ? Math.sin((bt / 0.18) * Math.PI) : 0
 
-    // Smooth color transition.
-    currentColor.current.lerp(targetColor.current, Math.min(1, delta * 4))
-    holoMaterial.color.copy(currentColor.current)
-    holoMaterial.emissive.copy(currentColor.current)
-
-    // Live voice energy (only meaningful while speaking), smoothed.
-    const rawLevel = (appState === 'speaking' && getLevel)
-      ? THREE.MathUtils.clamp(getLevel() * 3.0, 0, 1) : 0
-    levelRef.current += (rawLevel - levelRef.current) * Math.min(1, delta * 10)
-    const level = levelRef.current
-
-    // Decay the one-shot materialize flicker (~0.45s) into a rapid flutter.
-    flickerRef.current = Math.max(0, flickerRef.current - delta * 2.2)
-    const flick = flickerRef.current > 0
-      ? 1 - flickerRef.current * (0.45 + 0.45 * Math.sin(t * 55))
-      : 1
-
-    // Reduced motion: keep state color + gentle lip-sync, but suppress the
-    // voice-driven surge, scanline drift, and flicker (continuous WebGL motion
-    // the global CSS reduced-motion rule can't reach).
-    const effLevel = prefersReducedMotion ? 0 : level
-
-    const shader = holoMaterial.userData.shader
-    if (shader) {
-      if (shader.uniforms.uRimColor) shader.uniforms.uRimColor.value.copy(currentColor.current)
-      if (shader.uniforms.uLevel) shader.uniforms.uLevel.value = effLevel
-      if (shader.uniforms.uTime) shader.uniforms.uTime.value = prefersReducedMotion ? 0 : t
-    }
-
-    // Emissive: calm at idle, surges with the voice while speaking; flicker on entry.
-    const baseEmissive = appState === 'speaking' ? 0.85 + effLevel * 1.3
-      : appState === 'idle' ? 0.4 : 0.6
-    holoMaterial.emissiveIntensity +=
-      (baseEmissive - holoMaterial.emissiveIntensity) * Math.min(1, delta * 6)
-    holoMaterial.emissiveIntensity *= flick
-    // Holographic flutter also dips opacity slightly during materialize.
-    holoMaterial.opacity = 0.85 * (0.6 + 0.4 * flick)
-
-    // Audio-reactive bloom halo behind the head (driven from the frame loop).
-    if (glowRef && glowRef.current) {
-      const halo = 0.6 + effLevel * 0.9 + (1 - flick) * 0.6
-      glowRef.current.style.opacity = String(Math.min(1.4, halo))
-      if (!prefersReducedMotion) {
-        glowRef.current.style.transform = `scale(${1 + effLevel * 0.18})`
-      }
-    }
-
-    // Lip-sync: drive mouth from live audio visemes (Wawa-style) if available, else fallback to loudness.
-    const clientWeights = getVisemes ? getVisemes() : null
-    
     for (const mesh of morphMeshes) {
       const dict = mesh.morphTargetDictionary
       const inf = mesh.morphTargetInfluences
-      const set = (name, v) => {
+      const set = (name, target, rate = 0.4) => {
         const idx = dict[name]
-        if (idx !== undefined) inf[idx] = THREE.MathUtils.lerp(inf[idx], v, 0.25)
+        if (idx !== undefined) inf[idx] += (target - inf[idx]) * rate
       }
-
-      if (appState === 'speaking' && clientWeights) {
-        for (const [key, val] of Object.entries(clientWeights)) {
-          set(key, val)
-        }
-      } else if (appState === 'speaking' && getLevel) {
-        const open = THREE.MathUtils.clamp(level, 0, 1)
-        set('mouthOpen', open)
-        set('jawOpen', open * 0.9)
-        const wobble = (Math.sin(t * 9) + 1) * 0.5
-        set('viseme_aa', open * wobble)
-        set('viseme_O', open * (1 - wobble) * 0.7)
-      } else {
-        // Close mouth
-        for (let k = 0; k < inf.length; k++) inf[k] *= 0.8
+      // Subtle jaw open with loudness; the dominant viseme shapes the lips. Weights
+      // kept low so it reads as natural speech, not a gaping mouth. Don't stack a
+      // separate mouthOpen on top (that's what made it gape).
+      set('jawOpen', openness * 0.42)
+      for (const name of VISEMES) {
+        set(name, (speaking && name === dominant) ? openness * 0.68 : 0)
       }
+      set('mouthOpen', 0, 0.3)
+      set('mouthClose', 0, 0.3)
+      set('eyeBlinkLeft', blink, 0.6)
+      set('eyeBlinkRight', blink, 0.6)
     }
   })
 
-  return (
-    <group ref={groupRef}>
-      <primitive object={scene} />
-    </group>
-  )
+  return <primitive ref={rootRef} object={scene} />
 }
 
-/* Graceful fallback: a glowing orb that pulses & shifts with state color. */
+/* Graceful fallback orb if the GLB fails to load. */
 function FallbackOrb({ appState, getLevel }) {
   const meshRef = useRef()
   const matRef = useRef()
-  const targetColor = useRef(new THREE.Color(stateColorHex(appState)))
-  const currentColor = useRef(new THREE.Color(stateColorHex(appState)))
-  const scaleRef = useRef(1)
-
-  useEffect(() => {
-    targetColor.current.set(stateColorHex(appState))
-  }, [appState])
-
+  const tgt = useRef(new THREE.Color(stateColorHex(appState)))
+  const cur = useRef(new THREE.Color(stateColorHex(appState)))
+  const scl = useRef(1)
+  useEffect(() => { tgt.current.set(stateColorHex(appState)) }, [appState])
   useFrame((state, delta) => {
-    const t = state.clock.elapsedTime
-    currentColor.current.lerp(targetColor.current, Math.min(1, delta * 4))
-    if (matRef.current) {
-      matRef.current.color.copy(currentColor.current)
-      matRef.current.emissive.copy(currentColor.current)
-    }
-    let pulse = prefersReducedMotion ? 0 : Math.sin(t * 1.5) * 0.02
-    if (appState === 'speaking' && getLevel) {
-      pulse += THREE.MathUtils.clamp(getLevel() * 1.5, 0, 0.25)
-    }
-    const target = 1 + pulse
-    scaleRef.current += (target - scaleRef.current) * Math.min(1, delta * 12)
+    cur.current.lerp(tgt.current, Math.min(1, delta * 4))
+    if (matRef.current) { matRef.current.color.copy(cur.current); matRef.current.emissive.copy(cur.current) }
+    let pulse = prefersReducedMotion ? 0 : Math.sin(state.clock.elapsedTime * 1.5) * 0.02
+    if (appState === 'speaking' && getLevel) pulse += THREE.MathUtils.clamp(getLevel() * 1.5, 0, 0.25)
+    scl.current += (1 + pulse - scl.current) * Math.min(1, delta * 12)
     if (meshRef.current) {
-      meshRef.current.scale.setScalar(scaleRef.current)
-      if (!prefersReducedMotion) meshRef.current.rotation.y = t * 0.2
+      meshRef.current.scale.setScalar(scl.current)
+      if (!prefersReducedMotion) meshRef.current.rotation.y = state.clock.elapsedTime * 0.2
     }
   })
-
   return (
-    <mesh ref={meshRef}>
-      <icosahedronGeometry args={[0.42, 4]} />
-      <meshStandardMaterial
-        ref={matRef}
-        color={stateColorHex(appState)}
-        emissive={stateColorHex(appState)}
-        emissiveIntensity={0.8}
-        transparent
-        opacity={0.85}
-        roughness={0.3}
-        metalness={0.2}
-        wireframe
-      />
+    <mesh ref={meshRef} position={[0, 0.9, 0]}>
+      <icosahedronGeometry args={[0.4, 4]} />
+      <meshStandardMaterial ref={matRef} color={stateColorHex(appState)} emissive={stateColorHex(appState)}
+        emissiveIntensity={0.8} transparent opacity={0.85} roughness={0.3} metalness={0.2} wireframe />
     </mesh>
   )
 }
 
-function SceneContents({ appState, getLevel, getVisemes, url, glowRef }) {
+function SceneContents({ appState, getLevel, getLipsync, url }) {
+  const rim = stateColorHex(appState)
   return (
     <>
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[2, 3, 4]} intensity={0.8} />
-      <pointLight position={[-2, -1, 2]} intensity={0.5} color={stateColorHex(appState)} />
+      {/* Atmospheric depth so the figure sits IN the space, not on a flat card. */}
+      <fog attach="fog" args={['#080b12', 4.5, 11]} />
+      {/* Realistic lighting for the PBR Avaturn materials. */}
+      <hemisphereLight args={['#cfe0ff', '#1a2230', 0.7]} />
+      <directionalLight position={[3, 5, 4]} intensity={1.4} />
+      <directionalLight position={[-4, 2.5, 2]} intensity={0.5} color="#cfe0ff" />
+      {/* State-colored rim from behind for separation + brand presence. */}
+      <directionalLight position={[0, 3, -5]} intensity={1.1} color={rim} />
+      <pointLight position={[0, 0.2, 2.5]} intensity={0.3} color={rim} />
+
       <ErrorCatcher fallback={<FallbackOrb appState={appState} getLevel={getLevel} />}>
         <Suspense fallback={null}>
-          <HoloHead appState={appState} getLevel={getLevel} getVisemes={getVisemes} url={url} glowRef={glowRef} />
+          <AvatarFigure appState={appState} getLevel={getLevel} getLipsync={getLipsync} url={url} />
+          {/* Soft contact shadow grounds the figure in the environment. */}
+          <ContactShadows position={[0, 0.001, 0]} opacity={0.55} scale={6} blur={2.6} far={4} color="#000000" />
         </Suspense>
       </ErrorCatcher>
     </>
   )
 }
 
-/* Minimal React error boundary (class) — catches GLB load/parse failures. */
 class ErrorCatcher extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { hasError: false }
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-  componentDidCatch(err) {
-    // eslint-disable-next-line no-console
-    console.warn('[Avatar3D] GLB failed to load, using fallback orb:', err?.message || err)
-  }
-  render() {
-    if (this.state.hasError) return this.props.fallback
-    return this.props.children
-  }
+  constructor(props) { super(props); this.state = { hasError: false } }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(err) { console.warn('[Avatar3D] GLB failed to load, using fallback orb:', err?.message || err) }
+  render() { return this.state.hasError ? this.props.fallback : this.props.children }
 }
 
-export function Avatar3D({ appState = 'idle', getLevel, getVisemes, avatarUrl }) {
+/* Full-screen 3D avatar scene (fills the viewport like the pin wall). */
+export function Avatar3D({ appState = 'idle', getLevel, getLipsync, avatarUrl }) {
   const url = avatarUrl || DEFAULT_GLB
-  const [glow, setGlow] = useState(glowRgba(appState))
-  const glowRef = useRef(null)
-
-  useEffect(() => { setGlow(glowRgba(appState)) }, [appState])
 
   return (
-    <div
-      role="img"
-      aria-label={`Vaani 3D avatar — ${appState}`}
-      style={{
-        position: 'relative',
-        width: W,
-        height: H,
-        flexShrink: 0,
-        animation: 'avatar-reveal 700ms var(--ease-out-expo) 200ms both',
-      }}
-    >
-      {/* Soft radial CSS glow behind the head (bloom-lite). Color follows state;
-          opacity + scale are driven by the live voice energy from the frame loop. */}
-      <div
-        ref={glowRef}
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: -40,
-          background: `radial-gradient(ellipse 60% 65% at 50% 42%, ${glow} 0%, transparent 70%)`,
-          transition: 'background 800ms var(--ease-standard)',
-          pointerEvents: 'none',
-          willChange: 'opacity, transform',
-          zIndex: 0,
-        }}
-      />
-
+    <div role="img" aria-label={`Vaani 3D avatar — ${appState}`}
+      style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
       <Canvas
         gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
         dpr={[1, 2]}
-        camera={{ fov: 30, near: 0.1, far: 100, position: [0, 0, 1.05] }}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          zIndex: 3,
-          background: 'transparent',
+        shadows
+        camera={{ fov: 30, near: 0.1, far: 100, position: [0, 1.0, 2.8] }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping
+          gl.toneMappingExposure = 1.05
         }}
+        style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'transparent', zIndex: 3 }}
       >
-        <SceneContents appState={appState} getLevel={getLevel} getVisemes={getVisemes} url={url} glowRef={glowRef} />
+        <SceneContents appState={appState} getLevel={getLevel} getLipsync={getLipsync} url={url} />
       </Canvas>
     </div>
   )
 }
 
-// Preload the default GLB so the first render is fast.
 try { useGLTF.preload(DEFAULT_GLB) } catch (_) { /* ignore */ }

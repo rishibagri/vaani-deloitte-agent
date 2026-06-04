@@ -85,8 +85,8 @@ export function Header({
     }
   }
 
-  const dotColor = { connected: '#86BC25', connecting: '#F5A623', error: '#FF4444' }[connected] || '#4A6491'
-  const connLabel = { connected: 'Connected', connecting: 'Connecting', error: 'Offline' }[connected] || 'Connecting'
+  const dotColor = { connected: '#86BC25', connecting: '#C8A020', error: '#FF4444' }[connected] || '#3D5A8A'
+  const connLabel = { connected: 'Online', connecting: 'Linking', error: 'Offline' }[connected] || 'Linking'
   const selected  = LANGUAGES.find(l => l.code === currentLang) || LANGUAGES[0]
 
   return (
@@ -96,44 +96,49 @@ export function Header({
         position: 'fixed', top: 0, left: 0, right: 0,
         zIndex: 'var(--z-header)',
         height: 'var(--header-height)',
-        background: 'rgba(1,10,26,0.90)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        /* Cinematic glass: dark fill + blur + top-edge refraction, fades into the scene */
+        background: 'linear-gradient(to bottom, rgba(4,8,2,0.78) 0%, rgba(4,8,2,0.30) 100%)',
+        backdropFilter: 'blur(20px) saturate(1.6)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.6)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.07)',
         display: 'flex', alignItems: 'center',
         padding: '0 24px',
       }}
     >
-      {/* Left — logo */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 0, flex: '0 0 auto' }}>
-        <span style={{
-          fontFamily: "'Syne', sans-serif",
-          fontWeight: 800,
-          fontSize: 20,
-          letterSpacing: '-0.03em',
-          lineHeight: 1,
-          userSelect: 'none',
-        }}>
-          <span style={{ color: '#86BC25' }}>V</span>
-          <span style={{ color: 'var(--text-primary)' }}>AANI</span>
-        </span>
-        <span style={{
-          marginLeft: 8,
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 9,
-          letterSpacing: '0.04em',
-          color: 'var(--text-muted)',
-          lineHeight: 1,
-          paddingBottom: 1,
-        }}>
-          v1.0
-        </span>
+      {/* Left — brand signature */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: '0 0 auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+          <span style={{
+            fontFamily: "'Syne', sans-serif",
+            fontWeight: 800,
+            fontSize: 19,
+            letterSpacing: '-0.03em',
+            lineHeight: 1,
+            userSelect: 'none',
+          }}>
+            <span style={{ color: '#86BC25' }}>V</span>
+            <span style={{ color: 'var(--text-primary)' }}>AANI</span>
+          </span>
+          <span style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 8,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: 'rgba(134,188,37,0.6)',
+            lineHeight: 1,
+            userSelect: 'none',
+            paddingRight: '0.18em',
+          }}>
+            Autonomous Intelligence
+          </span>
+        </div>
       </div>
 
       <div style={{ flex: 1 }} />
 
       {/* Right controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '0 0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
 
         {/* Language selector */}
         <div style={{ position: 'relative' }}>
@@ -144,22 +149,23 @@ export function Header({
             aria-expanded={langOpen}
             aria-label={`Language: ${selected.label}. Change language.`}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: langOpen ? 'rgba(1,52,122,0.50)' : 'rgba(1,52,122,0.25)',
-              border: `1px solid ${langOpen ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)'}`,
+              display: 'flex', alignItems: 'center', gap: 7,
+              background: langOpen ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${langOpen ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`,
               borderRadius: 'var(--radius-full)',
-              padding: '4px 10px 4px 10px',
+              padding: '5px 12px',
               color: 'var(--text-secondary)',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 11,
               letterSpacing: '0.04em',
               cursor: 'pointer',
-              transition: 'background 150ms var(--ease-standard), border-color 150ms',
+              transition: 'background 150ms var(--ease-standard), border-color 150ms, box-shadow 150ms',
               outline: 'none',
               whiteSpace: 'nowrap',
+              boxShadow: langOpen ? 'inset 0 1px 0 rgba(255,255,255,0.10)' : 'none',
             }}
-            onFocus={(e)  => { e.currentTarget.style.boxShadow = '0 0 0 2px rgba(0,163,224,0.35)' }}
-            onBlur={(e)   => { e.currentTarget.style.boxShadow = 'none' }}
+            onFocus={(e)  => { e.currentTarget.style.boxShadow = '0 0 0 2px rgba(134,188,37,0.40)' }}
+            onBlur={(e)   => { e.currentTarget.style.boxShadow = langOpen ? 'inset 0 1px 0 rgba(255,255,255,0.10)' : 'none' }}
           >
             <span style={{ fontSize: 12 }}>{selected.native}</span>
             <ChevronIcon open={langOpen} />
@@ -174,16 +180,18 @@ export function Header({
               onKeyDown={onListKeyDown}
               style={{
                 position: 'fixed',
-                top: 'calc(var(--header-height) + 4px)',
+                top: 'calc(var(--header-height) + 6px)',
                 right: 24,
                 zIndex: 'var(--z-dropdown)',
-                background: '#010F28',
+                background: 'rgba(2,5,0,0.95)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255,255,255,0.10)',
                 borderRadius: 'var(--radius-lg)',
                 overflow: 'auto',
                 maxHeight: 320,
                 minWidth: 176,
-                boxShadow: '0 16px 48px rgba(0,0,0,0.72)',
+                boxShadow: '0 20px 56px rgba(0,0,0,0.80), inset 0 1px 0 rgba(255,255,255,0.08)',
                 animation: 'message-enter 160ms var(--ease-out-quart)',
               }}
             >
@@ -209,9 +217,9 @@ export function Header({
                       transition: 'background var(--dur-fast)',
                       outline: 'none',
                     }}
-                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = 'rgba(0,163,224,0.07)' }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = 'rgba(134,188,37,0.08)' }}
                     onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = 'none' }}
-                    onFocus={(e)      => { e.currentTarget.style.background = 'rgba(0,163,224,0.07)' }}
+                    onFocus={(e)      => { e.currentTarget.style.background = 'rgba(134,188,37,0.08)' }}
                     onBlur={(e)       => { if (!sel) e.currentTarget.style.background = 'none' }}
                   >
                     <span style={{ color: sel ? '#86BC25' : 'var(--text-primary)', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>
@@ -227,22 +235,35 @@ export function Header({
           )}
         </div>
 
-        {/* Connection dot — subtle, no text label */}
+        {/* Connection telemetry — dot + mono micro-label */}
         <div
           role="status"
           aria-live="polite"
           aria-label={`Connection: ${connLabel}`}
           title={connLabel}
-          style={{ display: 'flex', alignItems: 'center' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 7 }}
         >
           <div style={{
-            width: 7, height: 7, borderRadius: '50%',
+            width: 6, height: 6, borderRadius: '50%',
             background: dotColor,
             flexShrink: 0,
             animation: connected === 'connecting' ? 'dot-pulse 1200ms ease-in-out infinite' : 'none',
             transition: 'background 400ms var(--ease-standard)',
-            boxShadow: connected === 'connected' ? `0 0 6px ${dotColor}66` : 'none',
+            boxShadow: connected === 'connected' ? `0 0 8px ${dotColor}aa` : 'none',
           }} />
+          <span style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 9,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: dotColor,
+            lineHeight: 1,
+            paddingRight: '0.14em',
+            transition: 'color 400ms var(--ease-standard)',
+            whiteSpace: 'nowrap',
+          }}>
+            {connLabel}
+          </span>
         </div>
 
         {/* Admin gear */}
@@ -268,7 +289,7 @@ export function Header({
             e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
             e.currentTarget.style.background = 'none'
           }}
-          onFocus={e => { e.currentTarget.style.boxShadow = '0 0 0 2px rgba(0,163,224,0.35)' }}
+          onFocus={e => { e.currentTarget.style.boxShadow = '0 0 0 2px rgba(134,188,37,0.40)' }}
           onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

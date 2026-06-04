@@ -18,3 +18,5 @@ data/video/*.mp4
 *.pth
 *.bin
 *.safetensors
+frontend/public/Arti2.glb
+frontend/public/*.glb

@@ -39,11 +39,14 @@ export function StatusBadge({ appState, connected }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 7,
+        gap: 8,
         background: bg,
         border: `1px solid ${border}`,
         borderRadius: 'var(--radius-full)',
-        padding: '5px 14px 5px 10px',
+        padding: '6px 15px 6px 11px',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.07)',
         transition: `background 400ms var(--ease-standard), border-color 400ms var(--ease-standard)`,
       }}
     >
@@ -54,6 +57,7 @@ export function StatusBadge({ appState, connected }) {
           borderRadius: '50%',
           background: cfg.color,
           flexShrink: 0,
+          boxShadow: cfg.pulse ? `0 0 8px ${cfg.color}` : 'none',
           animation: cfg.pulse ? 'dot-pulse 1400ms ease-in-out infinite' : 'none',
           transition: `background 400ms var(--ease-standard)`,
         }}
@@ -61,11 +65,13 @@ export function StatusBadge({ appState, connected }) {
       <span
         key={key}
         style={{
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 12,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10.5,
           fontWeight: 500,
-          letterSpacing: '0.01em',
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
           color: cfg.color,
+          paddingRight: '0.14em',
           transition: `color 400ms var(--ease-standard)`,
           animation: 'hud-reveal 320ms var(--ease-out-quart) both',
         }}

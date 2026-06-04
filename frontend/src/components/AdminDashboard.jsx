@@ -28,20 +28,32 @@ const LANGUAGES = [
 ]
 
 const SECTIONS = [
-  { id: 'branding',  label: 'Company Brand' },
-  { id: 'model',     label: 'AI Model'      },
-  { id: 'avatar',    label: 'Avatar'        },
-  { id: 'language',  label: 'Language'      },
+  { id: 'branding',  label: 'Company Brand', icon: 'brand'  },
+  { id: 'model',     label: 'AI Model',      icon: 'model'  },
+  { id: 'avatar',    label: 'Avatar',        icon: 'avatar' },
+  { id: 'language',  label: 'Language',      icon: 'lang'   },
 ]
 
+function SectionIcon({ name }) {
+  const p = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
+  if (name === 'brand')  return <svg {...p}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+  if (name === 'model')  return <svg {...p}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
+  if (name === 'avatar') return <svg {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a7 7 0 0 1 14 0v1" /></svg>
+  if (name === 'lang')   return <svg {...p}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+  return null
+}
+
 // ── Reusable form primitives ──────────────────────────────────────────
+
+const FOCUS_RING = '0 0 0 3px rgba(134,188,37,0.12)'
+const INPUT_BG = 'rgba(0,0,0,0.42)'
 
 function Label({ children, htmlFor }) {
   return (
     <label htmlFor={htmlFor} style={{
-      display: 'block', fontFamily: "'Inter', sans-serif",
-      fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
-      marginBottom: 6, letterSpacing: '0.01em',
+      display: 'block', fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 10, fontWeight: 500, color: 'var(--text-muted)',
+      marginBottom: 7, letterSpacing: '0.14em', textTransform: 'uppercase',
     }}>
       {children}
     </label>
@@ -55,12 +67,14 @@ function Input({ id, value, onChange, placeholder, type = 'text', disabled }) {
       placeholder={placeholder} disabled={disabled}
       onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
       style={{
-        width: '100%', padding: '9px 12px', boxSizing: 'border-box',
-        background: 'rgba(1,10,26,0.65)',
-        border: `1px solid ${focus ? 'rgba(0,163,224,0.5)' : 'var(--border-default)'}`,
+        width: '100%', padding: '10px 13px', boxSizing: 'border-box',
+        background: INPUT_BG,
+        border: `1px solid ${focus ? 'rgba(134,188,37,0.55)' : 'rgba(255,255,255,0.07)'}`,
         borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
         fontFamily: "'Inter', sans-serif", fontSize: 14, outline: 'none',
-        transition: 'border-color 150ms', opacity: disabled ? 0.45 : 1,
+        boxShadow: focus ? FOCUS_RING : 'none',
+        transition: 'border-color 160ms var(--ease-out-quart), box-shadow 160ms var(--ease-out-quart)',
+        opacity: disabled ? 0.45 : 1,
       }}
     />
   )
@@ -73,12 +87,14 @@ function Textarea({ id, value, onChange, placeholder, rows = 4 }) {
       placeholder={placeholder} rows={rows}
       onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
       style={{
-        width: '100%', padding: '9px 12px', boxSizing: 'border-box',
-        background: 'rgba(1,10,26,0.65)',
-        border: `1px solid ${focus ? 'rgba(0,163,224,0.5)' : 'var(--border-default)'}`,
+        width: '100%', padding: '11px 13px', boxSizing: 'border-box',
+        background: INPUT_BG,
+        border: `1px solid ${focus ? 'rgba(134,188,37,0.55)' : 'rgba(255,255,255,0.07)'}`,
         borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
         fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.6,
-        outline: 'none', resize: 'vertical', transition: 'border-color 150ms',
+        outline: 'none', resize: 'vertical',
+        boxShadow: focus ? FOCUS_RING : 'none',
+        transition: 'border-color 160ms var(--ease-out-quart), box-shadow 160ms var(--ease-out-quart)',
       }}
     />
   )
@@ -91,13 +107,14 @@ function Select({ id, value, onChange, options }) {
       <select id={id} value={value ?? ''} onChange={e => onChange(e.target.value)}
         onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
         style={{
-          width: '100%', padding: '9px 32px 9px 12px', boxSizing: 'border-box',
-          background: 'rgba(1,10,26,0.65)',
-          border: `1px solid ${focus ? 'rgba(0,163,224,0.5)' : 'var(--border-default)'}`,
+          width: '100%', padding: '10px 32px 10px 13px', boxSizing: 'border-box',
+          background: INPUT_BG,
+          border: `1px solid ${focus ? 'rgba(134,188,37,0.55)' : 'rgba(255,255,255,0.07)'}`,
           borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
           fontFamily: "'Inter', sans-serif", fontSize: 14,
           outline: 'none', appearance: 'none', cursor: 'pointer',
-          transition: 'border-color 150ms',
+          boxShadow: focus ? FOCUS_RING : 'none',
+          transition: 'border-color 160ms var(--ease-out-quart), box-shadow 160ms var(--ease-out-quart)',
         }}
       >
         {options.map(o => (
@@ -129,11 +146,11 @@ function UploadZone({ label, accept, hint, value, onChange }) {
       onDragLeave={() => setDrag(false)}
       onDrop={e => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]) }}
       style={{
-        border: `1px dashed ${drag ? 'var(--blue)' : value ? 'rgba(134,188,37,0.4)' : 'var(--border-default)'}`,
-        borderRadius: 'var(--radius-md)', padding: '18px 16px', textAlign: 'center',
+        border: `1px dashed ${drag ? 'var(--green)' : value ? 'rgba(134,188,37,0.45)' : 'rgba(255,255,255,0.10)'}`,
+        borderRadius: 'var(--radius-md)', padding: '22px 16px', textAlign: 'center',
         cursor: 'pointer',
-        background: drag ? 'rgba(0,163,224,0.05)' : value ? 'rgba(134,188,37,0.04)' : 'rgba(1,10,26,0.4)',
-        transition: 'border-color 150ms, background 150ms', userSelect: 'none',
+        background: drag ? 'rgba(134,188,37,0.07)' : value ? 'rgba(134,188,37,0.05)' : 'rgba(0,0,0,0.30)',
+        transition: 'border-color 160ms var(--ease-out-quart), background 160ms var(--ease-out-quart)', userSelect: 'none',
       }}
     >
       <input ref={ref} type="file" accept={accept} style={{ display: 'none' }}
@@ -153,8 +170,11 @@ function UploadZone({ label, accept, hint, value, onChange }) {
         </div>
       ) : (
         <>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 3 }}>
-            Drop {label.toLowerCase()} here or click to browse
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={drag ? 'var(--green)' : 'var(--text-muted)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 8, transition: 'stroke 160ms' }} aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
+            Drop {label.toLowerCase()} here or <span style={{ color: 'var(--green)', fontWeight: 500 }}>browse</span>
           </div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
             {hint}
@@ -977,25 +997,53 @@ function BotEditor({ bot: initialBot, token, onBack, onActivated }) {
 
       {/* Editor body: sidebar + content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <nav style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--border-subtle)', padding: '20px 0', overflowY: 'auto' }}>
+        <nav style={{ width: 216, flexShrink: 0, borderRight: '1px solid var(--border-subtle)', padding: '18px 14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '4px 10px 10px' }}>
+            Settings
+          </div>
           {SECTIONS.map(sec => {
             const on = sec.id === section
             return (
               <button key={sec.id} onClick={() => setSection(sec.id)} style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '8px 20px', background: on ? 'rgba(134,188,37,0.07)' : 'none',
-                border: 'none', borderRight: `2px solid ${on ? 'var(--green)' : 'transparent'}`,
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                padding: '9px 11px', borderRadius: 'var(--radius-md)',
+                background: on ? 'rgba(134,188,37,0.10)' : 'transparent',
+                border: `1px solid ${on ? 'rgba(134,188,37,0.22)' : 'transparent'}`,
                 color: on ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: on ? 500 : 400,
-                cursor: 'pointer', transition: 'all 150ms',
-              }}>
+                fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: on ? 600 : 400,
+                cursor: 'pointer', transition: 'background 150ms var(--ease-out-quart), color 150ms, border-color 150ms',
+              }}
+                onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent' }}
+              >
+                <span style={{ color: on ? 'var(--green)' : 'var(--text-muted)', display: 'flex', transition: 'color 150ms' }}>
+                  <SectionIcon name={sec.icon} />
+                </span>
                 {sec.label}
               </button>
             )
           })}
         </nav>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 40px' }}>
-          <div style={{ maxWidth: 520 }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '30px 40px 56px' }}>
+          <div style={{ maxWidth: 560 }}>
+            {(() => {
+              const meta = {
+                branding: ['Company Brand', 'Identity shown across this bot — name, tagline, logo, and accent color.'],
+                model:    ['AI Model', 'Persona, language model, and voice that power live conversations.'],
+                avatar:   ['Avatar', 'How the assistant is rendered and the source video used for lip-sync.'],
+                language: ['Language', 'Default language and the set offered to visitors.'],
+              }[section] || []
+              return (
+                <div style={{ marginBottom: 26, paddingBottom: 18, borderBottom: '1px solid var(--border-subtle)' }}>
+                  <h2 style={{ fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif", fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 5px', letterSpacing: '-0.01em' }}>
+                    {meta[0]}
+                  </h2>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                    {meta[1]}
+                  </p>
+                </div>
+              )
+            })()}
             {section === 'branding'  && <BrandingSection  draft={draft} onChange={change} />}
             {section === 'model'     && <ModelSection     draft={draft} onChange={change} token={token} />}
             {section === 'avatar'    && <AvatarSection    draft={draft} onChange={change} />}
@@ -1869,64 +1917,79 @@ export function AdminDashboard({ token, onLogout }) {
     }}>
       {/* Top bar */}
       <div style={{
-        height: 52, borderBottom: '1px solid var(--border-subtle)',
-        background: 'rgba(1,10,26,0.95)', backdropFilter: 'blur(16px)',
-        display: 'flex', alignItems: 'center', padding: '0 24px', flexShrink: 0,
+        height: 58, borderBottom: '1px solid var(--border-subtle)',
+        background: 'rgba(10,10,10,0.82)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+        display: 'flex', alignItems: 'center', padding: '0 22px', flexShrink: 0, gap: 8,
       }}>
-        <button onClick={() => { window.location.hash = '' }} style={{
-          display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none',
-          color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
-          cursor: 'pointer', padding: '6px 8px', borderRadius: 'var(--radius-sm)', transition: 'color 150ms',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)' }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5M12 19l-7-7 7-7" />
-          </svg>
-          Back to Vaani
-        </button>
+        {/* Brand lockup */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, paddingRight: 8 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(160deg, rgba(134,188,37,0.18), rgba(134,188,37,0.04))',
+            border: '1px solid rgba(134,188,37,0.30)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10)',
+            fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--green)',
+          }}>
+            V
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: '-0.01em', color: 'var(--text-primary)', lineHeight: 1 }}>
+              VAANI
+            </span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, color: 'var(--text-muted)', letterSpacing: '0.16em', lineHeight: 1 }}>
+              CONTROL PLANE
+            </span>
+          </div>
+        </div>
+
+        <div style={{ width: 1, height: 24, background: 'var(--border-subtle)', margin: '0 6px' }} />
 
         {/* Tab switchers */}
         {view === 'library' && (
-          <div style={{ display: 'flex', gap: 4, marginLeft: 32 }}>
-            <button onClick={() => setTab('bots')} style={{
-              background: 'none', border: 'none',
-              borderBottom: `2px solid ${tab === 'bots' ? 'var(--green)' : 'transparent'}`,
-              color: tab === 'bots' ? 'var(--green)' : 'var(--text-secondary)',
-              fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: tab === 'bots' ? 600 : 400,
-              padding: '6px 14px', cursor: 'pointer', transition: 'all 150ms'
-            }}>
-              Configurations
-            </button>
-            <button onClick={() => setTab('users')} style={{
-              background: 'none', border: 'none',
-              borderBottom: `2px solid ${tab === 'users' ? 'var(--green)' : 'transparent'}`,
-              color: tab === 'users' ? 'var(--green)' : 'var(--text-secondary)',
-              fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: tab === 'users' ? 600 : 400,
-              padding: '6px 14px', cursor: 'pointer', transition: 'all 150ms'
-            }}>
-              Users & History
-            </button>
+          <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            {[['bots', 'Configurations'], ['users', 'Users & History']].map(([id, lbl]) => {
+              const on = tab === id
+              return (
+                <button key={id} onClick={() => setTab(id)} style={{
+                  background: on ? 'rgba(134,188,37,0.12)' : 'none',
+                  border: `1px solid ${on ? 'rgba(134,188,37,0.24)' : 'transparent'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  color: on ? 'var(--green)' : 'var(--text-secondary)',
+                  fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: on ? 600 : 500,
+                  padding: '5px 13px', cursor: 'pointer', transition: 'all 150ms var(--ease-out-quart)'
+                }}>
+                  {lbl}
+                </button>
+              )
+            })}
           </div>
         )}
 
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-            <span style={{ color: 'var(--green)' }}>V</span>AANI
-          </span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
-            ADMIN
-          </span>
-        </div>
+        <div style={{ flex: 1 }} />
+
+        <button onClick={() => { window.location.hash = '' }} style={{
+          display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: '1px solid var(--border-subtle)',
+          color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif",
+          fontSize: 12.5, fontWeight: 500,
+          cursor: 'pointer', padding: '6px 13px', borderRadius: 'var(--radius-md)', transition: 'all 150ms',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-default)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-subtle)' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          Live Interface
+        </button>
 
         <button onClick={() => { sessionStorage.removeItem('vaani_admin_token'); onLogout() }} style={{
           padding: '7px 14px', background: 'none', border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md)', color: 'var(--text-muted)',
-          fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: 'pointer', transition: 'all 150ms',
+          fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 500, cursor: 'pointer', transition: 'all 150ms',
         }}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-default)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.borderColor = 'rgba(255,68,68,0.3)' }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-subtle)' }}
         >
           Sign out

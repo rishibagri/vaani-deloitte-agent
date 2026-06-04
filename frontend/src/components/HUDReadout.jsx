@@ -15,25 +15,38 @@ const STATE_COLOR = {
   error:     'var(--error)',
 }
 
-function Readout({ label, children, visible }) {
+function Readout({ label, children, visible, align = 'left' }) {
   return (
     <div style={{
       opacity: visible ? 1 : 0,
       animation: visible ? 'hud-reveal 400ms var(--ease-out-expo) 500ms both' : 'none',
       pointerEvents: 'none',
     }}>
+      {/* Mono micro-label — house telemetry language */}
       <div style={{
-        fontFamily: "'Inter', sans-serif",
-        fontSize: 9,
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 8.5,
         fontWeight: 500,
-        letterSpacing: '0.04em',
-        color: 'rgba(139,163,199,0.55)',
-        marginBottom: 2,
-        textTransform: 'none',
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+        color: 'rgba(134,188,37,0.50)',
+        marginBottom: 4,
+        paddingRight: align === 'right' ? '0.18em' : 0,
       }}>
         {label}
       </div>
       {children}
+      {/* Gradient hairline rule — fades toward the avatar */}
+      <div aria-hidden="true" style={{
+        height: 1,
+        width: 52,
+        marginTop: 6,
+        marginLeft: align === 'right' ? 'auto' : 0,
+        background: align === 'right'
+          ? 'linear-gradient(270deg, rgba(134,188,37,0.45), transparent)'
+          : 'linear-gradient(90deg, rgba(134,188,37,0.45), transparent)',
+        opacity: 0.6,
+      }} />
     </div>
   )
 }
@@ -99,19 +112,19 @@ export function HUDReadout({
       }}
     >
       {position === 'top-left' && (
-        <Readout label="Session" visible={visible}>
+        <Readout label="Session" visible={visible} align="left">
           <HUDTimer running={sessionRunning} />
         </Readout>
       )}
 
       {position === 'top-right' && (
-        <Readout label="Language" visible={visible}>
+        <Readout label="Language" visible={visible} align="right">
           <span style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 12,
-            fontWeight: 500,
-            color: 'var(--text-secondary)',
-            letterSpacing: '0.01em',
+            fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.005em',
           }}>
             {LANG_NAMES[currentLang] || 'English'}
           </span>
@@ -119,13 +132,13 @@ export function HUDReadout({
       )}
 
       {position === 'bottom-left' && (
-        <Readout label="Model" visible={visible}>
+        <Readout label="Model" visible={visible} align="left">
           <span style={{
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "'JetBrains Mono', monospace",
             fontSize: 11,
             fontWeight: 500,
             color: 'var(--text-secondary)',
-            letterSpacing: '0.01em',
+            letterSpacing: '0.02em',
           }}>
             Gemini Live 3.1
           </span>
@@ -133,14 +146,16 @@ export function HUDReadout({
       )}
 
       {position === 'bottom-right' && (
-        <Readout label="Status" visible={visible}>
+        <Readout label="Status" visible={visible} align="right">
           <span style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 11,
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 12,
             fontWeight: 500,
-            letterSpacing: '0.01em',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
             color: STATE_COLOR[appState] || STATE_COLOR.idle,
             transition: 'color 400ms var(--ease-standard)',
+            paddingRight: '0.06em',
           }}>
             {appState ? appState.charAt(0).toUpperCase() + appState.slice(1) : 'Idle'}
           </span>

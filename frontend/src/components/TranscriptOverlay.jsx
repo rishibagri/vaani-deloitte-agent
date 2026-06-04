@@ -82,20 +82,20 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
         bottom: 24,
         left: '50%',
         zIndex: 'var(--z-transcript)',
-        width: 'min(660px, 90vw)',
-        background: 'rgba(1,15,38,0.72)',
-        backdropFilter: 'blur(28px) saturate(1.6)',
-        WebkitBackdropFilter: 'blur(28px) saturate(1.6)',
+        width: 'min(680px, 90vw)',
+        background: 'rgba(4,10,2,0.66)',
+        backdropFilter: 'blur(28px) saturate(1.7)',
+        WebkitBackdropFilter: 'blur(28px) saturate(1.7)',
         border: '1px solid rgba(255,255,255,0.09)',
         borderTop: '1.5px solid rgba(134,188,37,0.45)',
-        borderRadius: 16,
-        padding: '16px 20px 18px',
+        borderRadius: 18,
+        padding: '17px 22px 19px',
         opacity: visible ? 1 : 0,
         transform: visible
           ? 'translateX(-50%) translateY(0)'
           : 'translateX(-50%) translateY(16px)',
         transition: 'opacity 280ms var(--ease-out-quart), transform 280ms var(--ease-out-quart)',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.45)',
+        boxShadow: '0 16px 56px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)',
       }}
     >
       {/* Agent text */}
@@ -103,8 +103,9 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           {/* Avatar dot */}
           <div style={{
-            width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+            width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 3,
             background: 'rgba(134,188,37,0.15)', border: '1.5px solid rgba(134,188,37,0.35)',
+            boxShadow: '0 0 14px rgba(134,188,37,0.22), inset 0 0 8px rgba(134,188,37,0.10)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {isStreaming ? (
@@ -119,12 +120,17 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
 
           <p style={{
             margin: 0,
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 15,
-            lineHeight: 1.65,
-            color: 'var(--text-primary)',
+            fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
+            fontStyle: 'italic',
+            fontSize: 16,
+            fontWeight: 400,
+            lineHeight: 1.68,
+            color: 'rgba(242,246,252,0.95)',
+            letterSpacing: '0.005em',
+            textShadow: '0 1px 12px rgba(0,0,0,0.6)',
             textWrap: 'pretty',
             flex: 1,
+            paddingBottom: 1,
           }}>
             {wordItems.map(item => (
               <span
@@ -161,13 +167,14 @@ export function TranscriptOverlay({ agentText, isStreaming, userText, currentLan
       {/* User text */}
       {userText && (
         <p style={{
-          margin: agentText ? '10px 0 0 34px' : '0 0 0 34px',
+          margin: agentText ? '11px 0 0 34px' : '0 0 0 34px',
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
-          lineHeight: 1.5,
+          lineHeight: 1.55,
           color: 'var(--text-secondary)',
           fontStyle: 'italic',
-          opacity: 0.8,
+          letterSpacing: '0.005em',
+          opacity: 0.72,
         }}>
           {userText}
         </p>

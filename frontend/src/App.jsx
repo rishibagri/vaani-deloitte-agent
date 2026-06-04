@@ -79,100 +79,100 @@ function ConnectingOverlay({ connected, geminiReady }) {
       aria-live="polite"
       aria-label="Connecting to Vaani"
       style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 400,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 32,
-      background: 'rgba(1,10,26,0.90)',
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      pointerEvents: 'none',
-      animation: 'cv-fadein 500ms ease both',
-    }}>
-      {/* Brand */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+        position: 'fixed',
+        inset: 0,
+        zIndex: 400,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 40,
+        /* Deep, dimensional black with a soft green core glow — the product
+           "warming up" rather than a flat scrim. */
+        background:
+          'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(134,188,37,0.06) 0%, transparent 55%),' +
+          'radial-gradient(circle at 50% 50%, rgba(3,8,12,0.92) 0%, rgba(2,5,8,0.97) 100%)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        pointerEvents: 'none',
+        animation: 'cv-fadein 500ms ease both',
+      }}
+    >
+      {/* Brand lockup */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        <span style={{
+          fontFamily: "'Syne', 'Plus Jakarta Sans', sans-serif",
+          fontWeight: 700, fontSize: 30, lineHeight: 1,
+          letterSpacing: '-0.03em', userSelect: 'none',
+        }}>
+          <span style={{ color: 'var(--green, #86BC25)' }}>V</span>
+          <span style={{ color: 'rgba(242,246,252,0.95)' }}>AANI</span>
+        </span>
         <span style={{
           fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 10,
-          letterSpacing: '0.55em',
+          fontSize: 8.5, letterSpacing: '0.42em',
           textTransform: 'uppercase',
-          color: '#86BC25',
-          paddingRight: '0.55em',
-        }}>DELOITTE</span>
-        <span style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 8,
-          letterSpacing: '0.28em',
-          textTransform: 'uppercase',
-          color: 'rgba(61,90,138,0.70)',
-          paddingRight: '0.28em',
-        }}>VAANI // AVATAR INTELLIGENCE</span>
+          color: 'rgba(134,188,37,0.6)',
+          paddingRight: '0.42em',
+        }}>Deloitte · Avatar Intelligence</span>
       </div>
 
-      {/* Spinner ring */}
-      <div style={{ position: 'relative', width: 64, height: 64 }}>
+      {/* Concentric init reticle — precise, engineered, not a generic spinner */}
+      <div style={{ position: 'relative', width: 72, height: 72 }}>
         <div style={{
-          position: 'absolute', inset: 0,
-          borderRadius: '50%',
-          border: '1.5px solid rgba(134,188,37,0.12)',
-          borderTopColor: '#86BC25',
-          animation: 'cv-spin 1000ms linear infinite',
+          position: 'absolute', inset: 0, borderRadius: '50%',
+          border: '1px solid rgba(134,188,37,0.10)', borderTopColor: 'var(--green, #86BC25)',
+          animation: 'cv-spin 1100ms cubic-bezier(0.5,0,0.5,1) infinite',
         }} />
         <div style={{
-          position: 'absolute', inset: 8,
-          borderRadius: '50%',
-          border: '1px solid rgba(0,163,224,0.10)',
-          borderBottomColor: 'rgba(0,163,224,0.50)',
-          animation: 'cv-spin-rev 1600ms linear infinite',
+          position: 'absolute', inset: 11, borderRadius: '50%',
+          border: '1px solid rgba(61,90,138,0.12)', borderBottomColor: 'rgba(61,90,138,0.65)',
+          animation: 'cv-spin-rev 1800ms cubic-bezier(0.5,0,0.5,1) infinite',
         }} />
-        <div style={{
-          position: 'absolute', inset: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{
-            width: 6, height: 6,
-            borderRadius: '50%',
-            background: '#86BC25',
-            animation: 'cv-pulse 1200ms ease-in-out infinite',
-            boxShadow: '0 0 8px rgba(134,188,37,0.6)',
+            width: 5, height: 5, borderRadius: '50%', background: 'var(--green, #86BC25)',
+            boxShadow: '0 0 12px rgba(134,188,37,0.7)',
+            animation: 'cv-pulse 1300ms ease-in-out infinite',
           }} />
         </div>
       </div>
 
-      {/* Status message */}
-      <div style={{
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 10,
-        letterSpacing: '0.08em',
-        color: isWaitingForGemini ? 'rgba(134,188,37,0.60)' : 'rgba(255,255,255,0.38)',
-        textTransform: 'uppercase',
-        opacity: fade ? 1 : 0,
-        transition: 'opacity 300ms ease, color 400ms ease',
-        minHeight: 16,
-        paddingRight: '0.08em',
-      }}>
-        {isWaitingForGemini ? 'Opening Gemini Live session...' : INIT_MSGS[msgIdx]}
-      </div>
-
-      {/* Progress bar — slow pulse */}
-      <div style={{ width: 180, height: 1, background: 'rgba(61,90,138,0.20)' }}>
+      {/* Telemetry line + progress */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
         <div style={{
-          height: '100%',
-          background: 'linear-gradient(90deg, #3D5A8A, #86BC25)',
-          animation: 'cv-progress 2400ms ease-in-out infinite',
-        }} />
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10, letterSpacing: '0.16em',
+          color: isWaitingForGemini ? 'rgba(134,188,37,0.7)' : 'rgba(220,228,236,0.42)',
+          textTransform: 'uppercase',
+          opacity: fade ? 1 : 0,
+          transition: 'opacity 300ms ease, color 400ms ease',
+          minHeight: 16, paddingRight: '0.16em', textAlign: 'center',
+        }}>
+          {isWaitingForGemini ? 'Opening Gemini Live session' : INIT_MSGS[msgIdx]}
+        </div>
+        <div style={{
+          width: 210, height: 2, borderRadius: 2, overflow: 'hidden',
+          background: 'rgba(61,90,138,0.16)',
+        }}>
+          <div style={{
+            height: '100%', borderRadius: 2,
+            background: 'linear-gradient(90deg, rgba(61,90,138,0.6), var(--green, #86BC25))',
+            boxShadow: '0 0 10px rgba(134,188,37,0.4)',
+            animation: 'cv-progress 2400ms cubic-bezier(0.4,0,0.2,1) infinite',
+          }} />
+        </div>
       </div>
 
       <style>{`
         @keyframes cv-fadein   { from { opacity:0 } to { opacity:1 } }
         @keyframes cv-spin     { to { transform: rotate(360deg) } }
         @keyframes cv-spin-rev { to { transform: rotate(-360deg) } }
-        @keyframes cv-pulse    { 0%,100% { opacity:.4; transform:scale(1) } 50% { opacity:1; transform:scale(1.4) } }
-        @keyframes cv-progress { 0% { width:0% } 60% { width:100% } 100% { width:100% } }
+        @keyframes cv-pulse    { 0%,100% { opacity:.4; transform:scale(1) } 50% { opacity:1; transform:scale(1.5) } }
+        @keyframes cv-progress { 0% { transform: translateX(-100%) } 60%,100% { transform: translateX(0) } }
+        @media (prefers-reduced-motion: reduce) {
+          [aria-label="Connecting to Vaani"] * { animation: none !important; }
+        }
       `}</style>
     </div>
   )
@@ -466,7 +466,7 @@ function MainApp() {
             <Avatar3D
               appState={appState}
               getLevel={audioPlayback.getLevel}
-              getVisemes={audioPlayback.getVisemes}
+              getLipsync={audioPlayback.getLipsync}
               avatarUrl={botConfig?.avatar_3d_url || null}
             />
           ) : (
