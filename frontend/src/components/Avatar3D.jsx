@@ -37,7 +37,7 @@ const prefersReducedMotion =
    Holographic head — loads the GLB, applies a translucent cyan/fresnel shader,
    bobs gently, reacts to state color, and lip-syncs from live audio level.
 ─────────────────────────────────────────────────────────────────────────── */
-function HoloHead({ appState, getLevel, url, glowRef }) {
+function HoloHead({ appState, getLevel, getVisemes, url, glowRef }) {
   const { scene } = useGLTF(url)
   const groupRef = useRef()
   const { camera } = useThree()
@@ -219,28 +219,32 @@ function HoloHead({ appState, getLevel, url, glowRef }) {
       }
     }
 
-    // Lip-sync: drive mouth from live audio loudness when speaking.
-    let target = 0
-    if (appState === 'speaking' && getLevel) {
-      target = THREE.MathUtils.clamp(level, 0, 1)
-    }
-    // Smooth the mouth open value (fast attack-ish).
-    mouthRef.current += (target - mouthRef.current) * Math.min(1, delta * 18)
-    const open = mouthRef.current
-
+    // Lip-sync: drive mouth from live audio visemes (Wawa-style) if available, else fallback to loudness.
+    const clientWeights = getVisemes ? getVisemes() : null
+    
     for (const mesh of morphMeshes) {
       const dict = mesh.morphTargetDictionary
       const inf = mesh.morphTargetInfluences
       const set = (name, v) => {
         const idx = dict[name]
-        if (idx !== undefined) inf[idx] = v
+        if (idx !== undefined) inf[idx] = THREE.MathUtils.lerp(inf[idx], v, 0.25)
       }
-      set('mouthOpen', open)
-      set('jawOpen', open * 0.9)
-      // Vary a couple of visemes with a slow oscillation for natural motion.
-      const wobble = (Math.sin(t * 9) + 1) * 0.5
-      set('viseme_aa', open * wobble)
-      set('viseme_O', open * (1 - wobble) * 0.7)
+
+      if (appState === 'speaking' && clientWeights) {
+        for (const [key, val] of Object.entries(clientWeights)) {
+          set(key, val)
+        }
+      } else if (appState === 'speaking' && getLevel) {
+        const open = THREE.MathUtils.clamp(level, 0, 1)
+        set('mouthOpen', open)
+        set('jawOpen', open * 0.9)
+        const wobble = (Math.sin(t * 9) + 1) * 0.5
+        set('viseme_aa', open * wobble)
+        set('viseme_O', open * (1 - wobble) * 0.7)
+      } else {
+        // Close mouth
+        for (let k = 0; k < inf.length; k++) inf[k] *= 0.8
+      }
     }
   })
 
@@ -300,7 +304,7 @@ function FallbackOrb({ appState, getLevel }) {
   )
 }
 
-function SceneContents({ appState, getLevel, url, glowRef }) {
+function SceneContents({ appState, getLevel, getVisemes, url, glowRef }) {
   return (
     <>
       <ambientLight intensity={0.6} />
@@ -308,7 +312,7 @@ function SceneContents({ appState, getLevel, url, glowRef }) {
       <pointLight position={[-2, -1, 2]} intensity={0.5} color={stateColorHex(appState)} />
       <ErrorCatcher fallback={<FallbackOrb appState={appState} getLevel={getLevel} />}>
         <Suspense fallback={null}>
-          <HoloHead appState={appState} getLevel={getLevel} url={url} glowRef={glowRef} />
+          <HoloHead appState={appState} getLevel={getLevel} getVisemes={getVisemes} url={url} glowRef={glowRef} />
         </Suspense>
       </ErrorCatcher>
     </>
@@ -334,7 +338,7 @@ class ErrorCatcher extends Component {
   }
 }
 
-export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
+export function Avatar3D({ appState = 'idle', getLevel, getVisemes, avatarUrl }) {
   const url = avatarUrl || DEFAULT_GLB
   const [glow, setGlow] = useState(glowRgba(appState))
   const glowRef = useRef(null)
@@ -380,7 +384,7 @@ export function Avatar3D({ appState = 'idle', getLevel, avatarUrl }) {
           background: 'transparent',
         }}
       >
-        <SceneContents appState={appState} getLevel={getLevel} url={url} glowRef={glowRef} />
+        <SceneContents appState={appState} getLevel={getLevel} getVisemes={getVisemes} url={url} glowRef={glowRef} />
       </Canvas>
     </div>
   )

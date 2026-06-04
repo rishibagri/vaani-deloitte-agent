@@ -35,3 +35,11 @@ def encode_jpeg(frame_rgb: np.ndarray, quality: int = 85) -> bytes:
     frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
     _, encoded = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
     return encoded.tobytes()
+
+
+def calculate_rms(pcm_bytes: bytes) -> float:
+    """Calculate the Root Mean Square (RMS) loudness of PCM bytes."""
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    if len(samples) == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(samples**2)))

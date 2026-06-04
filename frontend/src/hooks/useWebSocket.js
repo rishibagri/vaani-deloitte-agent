@@ -3,7 +3,7 @@ import { useEffect, useRef, useCallback } from 'react'
 const AUDIO_TYPE = 0x01
 const VIDEO_TYPE = 0x02
 
-export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage, backendUrl }) {
+export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage, onFacialWeights, backendUrl }) {
   const ws = useRef(null)
   const retryCount = useRef(0)
   const closedByUs = useRef(false)
@@ -32,6 +32,10 @@ export function useWebSocket({ sessionId, onAudioChunk, onVideoFrame, onMessage,
       } else {
         try {
           const msg = JSON.parse(event.data)
+          if (msg.type === 'FACIAL_WEIGHTS') {
+            onFacialWeights?.(msg.weights)
+            return
+          }
           onMessage(msg)
         } catch {}
       }

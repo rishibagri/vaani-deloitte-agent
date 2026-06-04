@@ -13,10 +13,53 @@ from config import (
     KNOWN_RESPONSES_FILE, SAMPLE_RATE_MUSETALK, SAMPLE_RATE_GEMINI_OUT,
     GEMINI_API_KEY, GEMINI_TEXT_MODEL,
 )
-from audio_utils import resample_24k_to_16k
+from audio_utils import resample_24k_to_16k, calculate_rms
 from gemini_agent import GeminiAgent
 from loop_cache import LoopCache
 from musetalk_wrapper import MuseTalkModel
+
+
+def _musetalk_active() -> bool:
+    """Return True only when the active bot's render_mode is 'musetalk'.
+
+    Called before every MuseTalk accumulate/flush so that switching render
+    mode in the admin panel takes effect immediately — even mid-session —
+    without restarting the backend or dropping the WebSocket connection.
+    """
+    try:
+        from bot_config import get_active
+        return (get_active().get("render_mode") or "musetalk") == "musetalk"
+    except Exception:
+        return True  # safe default: don't suppress if we can't tell
+
+
+# ── PHASE 5: Neural facial-blendshape stub ───────────────────────────────────
+# Placeholder generator that streams ARKit blendshape weights to the browser at
+# ~30Hz while the avatar is speaking. Cycles through AA / OO / EE viseme shapes
+# so the frontend pin-displacement + WebSocket routing can be verified BEFORE the
+# heavy NVIDIA Audio2Face / Whisper neural network is wired in. Replace
+# `_VISEME_CYCLE` selection with real per-frame weights when that lands.
+#
+# Mouth shapes use standard ARKit-52 names (Avaturn / ReadyPlayerMe / VRM use the
+# same dictionary keys), so the frontend can look them up in morphTargetDictionary.
+_VISEME_AA = {"jawOpen": 0.78, "mouthClose": 0.0, "mouthFunnel": 0.0, "mouthPucker": 0.0}
+_VISEME_OO = {"jawOpen": 0.32, "mouthFunnel": 0.66, "mouthPucker": 0.58, "mouthClose": 0.05}
+_VISEME_EE = {"jawOpen": 0.16, "mouthStretchLeft": 0.62, "mouthStretchRight": 0.62,
+              "mouthSmileLeft": 0.30, "mouthSmileRight": 0.30, "mouthFunnel": 0.0}
+_VISEME_MM = {"jawOpen": 0.0, "mouthClose": 0.75, "mouthPucker": 0.2}
+_VISEME_FF = {"jawOpen": 0.05, "mouthClose": 0.1, "mouthLowerDownLeft": 0.5, "mouthLowerDownRight": 0.5}
+
+_VISEME_CYCLE = [_VISEME_AA, _VISEME_OO, _VISEME_EE, _VISEME_MM, _VISEME_FF]
+
+# Sent once when speech ends so the mouth lerps shut on the client.
+_VISEME_NEUTRAL = {
+    "jawOpen": 0.0, "mouthFunnel": 0.0, "mouthPucker": 0.0, "mouthClose": 0.0,
+    "mouthStretchLeft": 0.0, "mouthStretchRight": 0.0,
+    "mouthSmileLeft": 0.0, "mouthSmileRight": 0.0,
+}
+
+_FACIAL_WEIGHTS_HZ = 30        # streaming rate
+_VISEME_HOLD_S     = 0.18      # how long each AA/OO/EE shape is held
 
 if TYPE_CHECKING:
     from face_memory import FaceMemory
@@ -106,6 +149,8 @@ class SessionPipeline:
         self._audio_sent_in_turn = False
         self._turn_epoch = 0   # bumped on barge-in to drop stale audio/video frames
         self._suppress_output = False  # True between a barge-in and the next user turn
+        self._fw_task = None   # facial-blendshape streaming task (Phase 5 stub)
+        self._current_audio_level = 0.0
         # MuseTalk audio coalescing: accumulate 24kHz PCM and run lip-sync once per
         # window so the (fixed-cost) Whisper encoder is amortized over many frames.
         self._mt_buf = bytearray()
@@ -127,7 +172,60 @@ class SessionPipeline:
             return
         await self._set_state("idle")
         asyncio.create_task(self._process_output())
+        self._fw_task = asyncio.create_task(self._facial_weights_loop())
         print(f"[PIPELINE] Session {self.session_id} started")
+
+    async def _facial_weights_loop(self):
+        """PHASE 5 stub: stream ARKit blendshape weights at ~30Hz while speaking.
+
+        Only emits in browser-render modes (pinscreen / 3d); MuseTalk renders the
+        face server-side so it doesn't need client blendshapes. When real neural
+        weights (Audio2Face/Whisper) are integrated, swap the viseme cycle below
+        for the model output — the transport + client binding stay identical.
+        """
+        dt = 1.0 / _FACIAL_WEIGHTS_HZ
+        idx = 0
+        hold = 0.0
+        was_active = False
+        try:
+            while self._running:
+                await asyncio.sleep(dt)
+                active = (
+                    self._state == "speaking"
+                    and not self._suppress_output
+                    and not _musetalk_active()
+                )
+                if active:
+                    hold += dt
+                    if hold >= _VISEME_HOLD_S:
+                        hold = 0.0
+                        idx = (idx + 1) % len(_VISEME_CYCLE)
+                    
+                    # Real-time audio level drives the jaw
+                    level = getattr(self, "_current_audio_level", 0.0)
+                    jaw_open = min(1.0, level * 12.0)
+                    
+                    # Combine with a viseme shape for mouth variety
+                    weights = dict(_VISEME_CYCLE[idx])
+                    weights["jawOpen"] = max(weights["jawOpen"] * 0.5, jaw_open)
+
+                    await self.send_json({
+                        "type": "FACIAL_WEIGHTS",
+                        "weights": weights,
+                    })
+                    was_active = True
+                elif was_active:
+                    # Speech just ended — close the mouth on the client.
+                    self._current_audio_level = 0.0
+                    await self.send_json({
+                        "type": "FACIAL_WEIGHTS",
+                        "weights": dict(_VISEME_NEUTRAL),
+                    })
+                    was_active = False
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[PIPELINE] facial weights loop error: {e}")
 
     async def handle_browser_message(self, data: bytes | str):
         """
@@ -229,6 +327,7 @@ class SessionPipeline:
 
             if item_type == "audio":
                 audio_bytes = item["data"]
+                self._current_audio_level = calculate_rms(audio_bytes)
 
                 # Suppressed after a barge-in: discard the interrupted turn's audio
                 # that Gemini keeps streaming until the user starts a new turn.
@@ -239,12 +338,15 @@ class SessionPipeline:
                 await self.send_bytes(AUDIO_PREFIX + audio_bytes)
                 await self._set_state("speaking")
 
-                # Accumulate for MuseTalk; only run inference once a window fills up,
-                # so the fixed-cost Whisper encoder amortizes over a full GPU batch.
-                if self.musetalk.loaded and self.loop_cache.loaded:
+                # Accumulate for MuseTalk only when render_mode is 'musetalk'.
+                # Re-checked every chunk so a mid-session mode switch in the admin
+                # panel takes effect immediately without restarting the backend.
+                if self.musetalk.loaded and self.loop_cache.loaded and _musetalk_active():
                     self._mt_buf.extend(audio_bytes)
                     if len(self._mt_buf) >= self._mt_flush_bytes:
                         await self._flush_musetalk()
+                elif not _musetalk_active():
+                    self._mt_buf.clear()  # discard any residual buffer on mode switch
 
             elif item_type == "transcript_agent":
                 current_transcript += item.get("text", "")
@@ -264,8 +366,9 @@ class SessionPipeline:
             elif item_type == "turn_complete":
                 current_transcript = ""
                 # Flush any trailing audio shorter than a full window.
-                if self.musetalk.loaded and self.loop_cache.loaded and not self._suppress_output:
+                if self.musetalk.loaded and self.loop_cache.loaded and not self._suppress_output and _musetalk_active():
                     await self._flush_musetalk()
+                self._mt_buf.clear()  # always clear buffer at turn end
                 self._suppress_output = False  # interrupted turn is over
                 await self._set_state("idle")
 
@@ -323,6 +426,12 @@ class SessionPipeline:
 
     async def stop(self):
         self._running = False
+        if self._fw_task and not self._fw_task.done():
+            self._fw_task.cancel()
+            try:
+                await self._fw_task
+            except (asyncio.CancelledError, Exception):
+                pass
         await self._save_memory()
         # Background semantic memory save (Supabase or local JSON)
         if len(self.agent.transcript) > 4:

@@ -198,6 +198,10 @@ function MainApp() {
 
   const videoFrameHandlerRef = useRef(null)
   const clearCanvasRef = useRef(null)
+  /* Latest ARKit blendshape weights from the backend neural stream (Phase 5).
+     A ref (not state) so the 30Hz updates never trigger React re-renders —
+     the Three.js render loop reads .current directly. */
+  const facialWeightsRef = useRef(null)
 
   const { status: cameraStatus, captureFrame } = useFaceCapture()
 
@@ -244,11 +248,16 @@ function MainApp() {
     handleConvMessage(msg)
   }, [handleConvMessage, audioPlayback])
 
+  const onFacialWeights = useCallback((weights) => {
+    facialWeightsRef.current = weights
+  }, [])
+
   const { sendJson, sendBinary } = useWebSocket({
     sessionId: identityReady ? sessionId : null,
     onAudioChunk,
     onVideoFrame,
     onMessage,
+    onFacialWeights,
     backendUrl: BACKEND_URL,
   })
 
@@ -405,6 +414,8 @@ function MainApp() {
             currentLang={currentLang}
             onLanguageChange={handleLanguageChange}
             getLevel={audioPlayback.getLevel}
+            getVisemes={audioPlayback.getVisemes}
+            facialWeightsRef={facialWeightsRef}
             imageUrl={botConfig?.pinscreen_image_url || null}
             isRecording={isRecording}
             onMicStart={handleMicStart}
@@ -455,6 +466,7 @@ function MainApp() {
             <Avatar3D
               appState={appState}
               getLevel={audioPlayback.getLevel}
+              getVisemes={audioPlayback.getVisemes}
               avatarUrl={botConfig?.avatar_3d_url || null}
             />
           ) : (

@@ -39,7 +39,12 @@
       "Bash(git clone *)",
       "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/ui-ux-pro-max /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-main)",
       "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/design /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-design)",
-      "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/ui-styling /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-styling)"
+      "Bash(cp -r /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max/.claude/skills/ui-styling /Users/rishii3/Desktop/deloitte/.claude/skills/ui-ux-pro-max-styling)",
+      "Bash(npx --no-install @gltf-transform/cli --version)",
+      "Bash(sysctl -n hw.memsize)",
+      "Bash(awk '{print $1/1073741824\" GB\"}')",
+      "Bash(tee /tmp/arti3-opt.log)",
+      "Bash(awk '{print $5/1048576\" MB\"}')"
     ]
   }
 }

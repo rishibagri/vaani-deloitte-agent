@@ -102,6 +102,8 @@ export function PinWallStage({
   currentLang = 'en',
   onLanguageChange,
   getLevel,
+  getVisemes,
+  facialWeightsRef,
   imageUrl,
   isRecording,
   onMicStart,
@@ -117,8 +119,10 @@ export function PinWallStage({
   const triggerRef  = useRef(null)
   const optionRefs  = useRef([])
 
-  /* showFace: true when Vaani is active (listening / thinking / speaking).
-     Delays returning to wave by 2.2s so brief pauses don't cause flicker. */
+  /* showFace drives the wave ↔ face transition: the wall ripples with the idle wave,
+     resolves into Vaani's talking face when she's active (listening/thinking/speaking),
+     then — after a quiet beat with no mic input — merges back into the swaying wave.
+     The hide delay keeps brief pauses mid-speech from collapsing the face. */
   const [showFace, setShowFace] = useState(false)
   const hideTimerRef = useRef(null)
 
@@ -127,7 +131,7 @@ export function PinWallStage({
       clearTimeout(hideTimerRef.current)
       setShowFace(true)
     } else {
-      hideTimerRef.current = setTimeout(() => setShowFace(false), 2200)
+      hideTimerRef.current = setTimeout(() => setShowFace(false), 2800)
     }
     return () => clearTimeout(hideTimerRef.current)
   }, [appState])
@@ -265,7 +269,7 @@ export function PinWallStage({
 
       {/* ── BACKGROUND: fullscreen pin wall (z 0) ── */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-        <PinScreenAvatar fill appState={appState} getLevel={getLevel} imageUrl={imageUrl} showFace={showFace} />
+        <PinScreenAvatar fill appState={appState} getLevel={getLevel} getVisemes={getVisemes} facialWeightsRef={facialWeightsRef} imageUrl={imageUrl} showFace={showFace} />
       </div>
 
       {/* ── AMBIENT STATE GLOW — subtle bloom behind face center (z 1) ── */}
