@@ -19,12 +19,33 @@ just recency-based context.
    embedding   vector(768),
    language    text        default 'en',
    transcript  text,
+   company_id  text        default 'default',
    created_at  timestamptz default now()
  );
 
  create index on conversations
    using ivfflat (embedding vector_cosine_ops)
    with (lists = 100);
+
+ -- Multi-tenant: scope semantic retrieval to one client. Pass filter_company.
+ create or replace function match_conversations(
+   query_embedding vector(768),
+   match_count int default 3,
+   filter_company text default 'default'
+ ) returns table (
+   id uuid, session_id text, summary text, language text,
+   company_id text, created_at timestamptz, similarity float
+ ) language sql stable as $$
+   select c.id, c.session_id, c.summary, c.language, c.company_id,
+          c.created_at, 1 - (c.embedding <=> query_embedding) as similarity
+   from conversations c
+   where c.company_id = filter_company and c.embedding is not null
+   order by c.embedding <=> query_embedding
+   limit match_count;
+ $$;
+
+ -- Existing deployments: add the column without dropping data.
+ -- alter table conversations add column if not exists company_id text default 'default';
 
 ────────────────────────────────────────────────────────────────────────
 """
@@ -117,10 +138,14 @@ async def save_conversation(
     session_id: str,
     transcript: list[dict],
     language: str = "en",
+    company_id: str = "default",
 ):
     """
     Summarise and persist a completed conversation.
     Called as a background task — does not block the response pipeline.
+
+    `company_id` is the active tenant id; it tags every stored memory so that
+    one client's conversations are never retrieved for another client.
     """
     if not transcript:
         return
@@ -139,13 +164,14 @@ async def save_conversation(
             "summary":    summary,
             "language":   language,
             "transcript": turns,
+            "company_id": company_id,
             "created_at": now,
         }
         if embedding:
             row["embedding"] = embedding
         try:
             _supabase_client.table("conversations").insert(row).execute()
-            logging.info(f"[MEMORY] Saved to Supabase: {session_id}")
+            logging.info(f"[MEMORY] Saved to Supabase: {session_id} (tenant={company_id})")
         except Exception as e:
             logging.warning(f"[MEMORY] Supabase insert failed: {e}")
     else:
@@ -154,17 +180,23 @@ async def save_conversation(
             "session_id": session_id,
             "summary":    summary,
             "language":   language,
+            "company_id": company_id,
             "created_at": now,
         })
         _write_local(entries)
-        logging.info(f"[MEMORY] Saved to local JSON: {session_id}")
+        logging.info(f"[MEMORY] Saved to local JSON: {session_id} (tenant={company_id})")
 
 
-async def get_relevant_context(current_query: str, limit: int = 3) -> str:
+async def get_relevant_context(
+    current_query: str, limit: int = 3, company_id: str = "default"
+) -> str:
     """
     Return a formatted string of relevant past conversation summaries.
     Uses cosine similarity search on Supabase, or recency fallback locally.
     Returns empty string if no memory exists yet.
+
+    Results are scoped to `company_id` so a tenant only ever sees its own
+    conversation history.
     """
     if _USE_SUPABASE and _supabase_client is not None:
         embedding = await _gemini_embed(current_query)
@@ -176,14 +208,31 @@ async def get_relevant_context(current_query: str, limit: int = 3) -> str:
                 {
                     "query_embedding": embedding,
                     "match_count":     limit,
+                    "filter_company":  company_id,
                 },
             ).execute()
             rows = resp.data or []
         except Exception as e:
-            logging.warning(f"[MEMORY] Supabase search failed: {e}")
-            rows = []
+            # Older match_conversations RPCs don't accept filter_company. Retry
+            # without it, then filter client-side so isolation still holds.
+            logging.warning(f"[MEMORY] Supabase search (scoped) failed, retrying: {e}")
+            try:
+                resp = _supabase_client.rpc(
+                    "match_conversations",
+                    {"query_embedding": embedding, "match_count": limit * 4},
+                ).execute()
+                rows = [
+                    r for r in (resp.data or [])
+                    if r.get("company_id", "default") == company_id
+                ][:limit]
+            except Exception as e2:
+                logging.warning(f"[MEMORY] Supabase search failed: {e2}")
+                rows = []
     else:
-        entries = _read_local()
+        entries = [
+            e for e in _read_local()
+            if e.get("company_id", "default") == company_id
+        ]
         rows = entries[-limit:] if entries else []
 
     if not rows:

@@ -21,22 +21,18 @@ export function useAudioPlayback() {
       // Analyser sits in the graph (source -> analyser -> destination)
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 1024
-      analyser.smoothingTimeConstant = 0.5
+      analyser.smoothingTimeConstant = 0.15 // Lowered from 0.5 to reduce latency
       analyser.connect(ctx.destination)
       analyserRef.current = analyser
       dataRef.current = new Uint8Array(analyser.fftSize)
       freqRef.current = new Uint8Array(analyser.frequencyBinCount)
 
-      // wawa-lipsync drives the 3D avatar's Oculus visemes. The library normally
-      // wants an <audio> element + its own AudioContext; instead we rebind its
-      // analyser onto OUR playback context and feed it in parallel off our analyser
-      // (no output connection → audio isn't doubled). The pin wall is unaffected —
-      // it keeps using getVisemes()/getLevel() on the original analyser.
+      // wawa-lipsync drives the 3D avatar's Oculus visemes.
       try {
-        const lip = new Lipsync({ fftSize: 2048, historySize: 10 })
+        const lip = new Lipsync({ fftSize: 2048, historySize: 6 }) // Reduced history for snappier response
         const wawaAnalyser = ctx.createAnalyser()
         wawaAnalyser.fftSize = 2048
-        wawaAnalyser.smoothingTimeConstant = 0.5
+        wawaAnalyser.smoothingTimeConstant = 0.1 // Fast response for viseme analysis
         lip.audioContext = ctx
         lip.analyser = wawaAnalyser
         lip.dataArray = new Uint8Array(wawaAnalyser.frequencyBinCount)

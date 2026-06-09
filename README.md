@@ -1,14 +1,36 @@
 # Vaani - Deloitte Avatar Intelligence System
 
-Vaani is a real-time multilingual AI avatar for Deloitte DCIT India. You speak, it listens via Gemini Live, generates a spoken response, and renders a lip-synced avatar in the browser. The interface is designed for enterprise demo settings: conference rooms, client pitches, and proof-of-concept presentations. MuseTalk lip sync activates automatically when a CUDA GPU is present.
+Vaani is a real-time, Deloitte-themed AI avatar interface for enterprise intelligence. It features a high-fidelity **3D office environment** powered by Three.js and React Three Fiber, providing an immersive experience for client pitches, conference rooms, and internal demos. The system leverages **Gemini Live** for ultra-low latency voice interaction and **MuseTalk** for high-quality lip-syncing.
+
+---
+
+## Key Features
+
+- **3D Office Environment**: A fully realized 3D scene authored in real-world meters, featuring dynamic lighting, soft shadows, and furniture-aware navigation.
+- **Dynamic Deloitte Branding**: Dynamic application of Deloitte brand identity, including logo application to the 3D scene (LogoCircle) and a white-label CSS token system.
+- **Gemini Live Integration**: Real-time multilingual voice interaction (STT + LLM + TTS) with sub-second response times.
+- **Advanced Lip-Sync**: State-of-the-art MuseTalk inference for synchronized video/3D avatar movement.
+- **Presence State Machine**: The avatar intelligently transitions between seated, standing, and walking phases based on user detection.
+- **Multi-Tenant Architecture**: Config-driven branding for different Deloitte teams or clients.
+
+---
 
 ## Pipeline
 
 ```
-Mic ──► Gemini Live (STT + LLM + TTS) ──► FastAPI Backend ──► Browser
-                                       │
-                                       └──► MuseTalk (GPU only) ──► Canvas overlay
+Mic ──► Gemini Live (STT + LLM + TTS) ──► FastAPI Backend ──► Browser (3D Office)
+                                       │                       │
+                                       └──► MuseTalk (GPU) ────┴──► Avatar / Lip-sync
 ```
+
+---
+
+## Technical Stack
+
+- **Frontend**: React 18, Vite, Three.js, React Three Fiber, Drei, Tailwind CSS (optional).
+- **Backend**: Python 3.10, FastAPI, Uvicorn.
+- **AI/ML**: Gemini Live API, MuseTalk (NVIDIA GPU), OpenCV (Face Recognition).
+- **Infrastructure**: Docker-ready, Modal-optimized, Supabase/PostgreSQL for memory.
 
 ---
 
@@ -18,320 +40,117 @@ Mic ──► Gemini Live (STT + LLM + TTS) ──► FastAPI Backend ──► 
 
 - Python 3.10 or later: `brew install python@3.10`
 - Node.js 20 LTS: [nodejs.org](https://nodejs.org)
-- Git: included with Xcode Command Line Tools (`xcode-select --install`)
-- ffmpeg (for video conversion, if needed): `brew install ffmpeg`
+- ffmpeg (for video conversion): `brew install ffmpeg`
 
-> MuseTalk lip sync is disabled automatically on Mac because CUDA is not available. All Gemini Live features work normally without it.
+> MuseTalk lip-sync is disabled automatically on Mac (No CUDA). Gemini Live features work normally with video fallback.
 
 ### Windows (CUDA GPU)
 
-- **Python 3.10** exactly. MuseTalk's dependencies are sensitive to the minor version; 3.11+ breaks them. The recommended way to pin 3.10 alongside any other Python you have is **pyenv-win**:
+- **Python 3.10** exactly.
+- **Node.js 20 LTS**.
+- **NVIDIA driver** (up to date).
+- **Visual Studio C++ Build Tools** (Select "Desktop development with C++").
 
-  ```
-  pip install pyenv-win --target %USERPROFILE%\.pyenv
-  ```
-
-  Then add `%USERPROFILE%\.pyenv\pyenv-win\bin` and `...\pyenv-win\shims` to your PATH, open a new terminal, and run:
-
-  ```
-  pyenv install 3.10.11
-  pyenv local 3.10.11
-  python --version    REM should print 3.10.x
-  ```
-
-  (A plain python.org 3.10 install with **Add Python to PATH** checked also works, as long as `python --version` reports 3.10.x before you run setup.)
-- **Node.js 20 LTS** from [nodejs.org](https://nodejs.org)
-- **Git for Windows** from [git-scm.com](https://git-scm.com)
-- **NVIDIA driver** up to date. `setup.bat` detects the GPU with `nvidia-smi` and installs PyTorch 2.0.1 built for **CUDA 11.8 (cu118)**, which runs on CUDA 11.8 and 12.x drivers. You do **not** need to install the CUDA Toolkit manually unless `nvidia-smi` is missing.
-- **Visual Studio C++ Build Tools** from [visualstudio.microsoft.com/visual-cpp-build-tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select the **"Desktop development with C++"** workload. Required for `chumpy` (MuseTalk blending). Without it `setup.bat` will warn but continue; MuseTalk will still run with reduced blending quality.
-
-Verify your GPU is visible before running setup:
-
-```
+Verify your GPU is visible:
+```bash
 nvidia-smi
 ```
 
 ---
 
-## First-Time Setup
+## Setup & Installation
 
-### Mac
-
+### 1. Repository Setup
 ```bash
 git clone https://github.com/YOUR_USERNAME/deloitte.git
 cd deloitte
+cp .env.example .env
+```
+Edit `.env` and add your `GEMINI_API_KEY`.
+
+### 2. Backend Setup
+**Mac:**
+```bash
 python3 -m venv backend/.venv
 source backend/.venv/bin/activate
 pip install -r backend/requirements.txt
-cd frontend && npm install && cd ..
-cp .env.example .env
 ```
 
-Then:
+**Windows:**
+Run `scripts\setup.bat`. This handles venv creation, MuseTalk cloning, and GPU-specific dependencies.
 
-1. Open `.env` and add your `GEMINI_API_KEY`
-2. Copy `avatar_idle.mp4` to `data/video/` and `frontend/public/`
-
-### Windows
-
-```
-git clone https://github.com/YOUR_USERNAME/deloitte.git
-cd deloitte
-pyenv local 3.10.11    REM if using pyenv-win; confirm with: python --version
-scripts\setup.bat
+### 3. Frontend Setup
+```bash
+cd frontend && npm install
 ```
 
-`setup.bat` handles everything: checks for Python/Node/Git/GPU, clones MuseTalk (GPU machines), creates the virtual environment at `backend\.venv`, installs the base pip dependencies, then (only if an NVIDIA GPU is detected) installs PyTorch 2.0.1 + cu118, the GPU utility packages, mmcv/mmdet/mmpose/mmengine, chumpy, openai-whisper, and MuseTalk's own requirements. It also runs `npm install` for the frontend and copies `.env.example` to `.env`.
-
-> Run `scripts\setup.bat` in a terminal where `python --version` already reports **3.10.x**. The venv inherits whatever `python` is on PATH, so if 3.11+ is active the MuseTalk packages will fail to install.
-
-After it finishes:
-
-1. Open `.env` and add your `GEMINI_API_KEY`
-2. Copy `avatar_idle.mp4` to `data\video\` and `frontend\public\`
-3. Run `scripts\download_models.bat` to download MuseTalk weights (15-20 minutes, first time only)
+### 4. Weights & Assets
+**GPU Machines Only:** Run `scripts\download_models.bat` to fetch MuseTalk weights (~2GB).
+**Face Recognition:** Run `scripts\install_face_recognition.bat` to fetch YuNet/SFace models.
 
 ---
 
 ## Running the App
 
 ### Mac
-
 ```bash
 bash scripts/start_mac.sh
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in Chrome.
-
 ### Windows
-
 ```
 scripts\run.bat
 ```
 
-This opens two separate Command Prompt windows automatically — one for the backend, one for the frontend.
-
-Open [http://localhost:5173](http://localhost:5173) in Chrome or Edge.
-
-### Manual start (both platforms, if scripts do not work)
-
-**Terminal 1 — Backend:**
-
-```bash
-# Mac
-source backend/.venv/bin/activate
-cd backend
-python3 main.py
-
-# Windows
-backend\.venv\Scripts\activate
-cd backend
-python main.py
-```
-
-**Terminal 2 — Frontend:**
-
-```bash
-cd frontend
-npm run dev
-```
+Access the interface at [http://localhost:5173](http://localhost:5173).
 
 ---
 
-## Activating the Virtual Environment
+## 3D Environment & Customization
 
-> The venv activation only lasts for the current terminal session. If you close the terminal and reopen it, you must activate again.
+The 3D office is loaded from `frontend/public/office_room.glb`. 
 
-```bash
-# Mac
-source backend/.venv/bin/activate
+### Dynamic Logo
+The 3D scene includes a `LogoCircle` mesh. The system can dynamically swap textures on this mesh to match tenant branding. Ensure your logos are square PNGs for optimal fit.
 
-# Windows
-backend\.venv\Scripts\activate
-```
-
-You will see `(.venv)` at the start of your prompt when it is active.
-
-The frontend (`npm run dev`) does not need the venv. Only the backend needs it.
+### Custom Avatars
+Vaani supports RPM (Ready Player Me) and Avaturn GLB models.
+1. Place your `.glb` in `frontend/public/`.
+2. Update `avatar_3d_url` in the bot configuration or via the Admin Dashboard.
 
 ---
 
-## Environment Variables
-
-All values live in `.env` (copied from `.env.example`). They are read by `backend/config.py` unless noted otherwise. Only `GEMINI_API_KEY` is required; everything else has a working default.
-
-### Gemini
+## Configuration (Environment Variables)
 
 | Variable | Default | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | — (**required**) | Gemini API key from Google AI Studio |
-| `GEMINI_MODEL` | `gemini-3.1-flash-live-preview` | Realtime voice model (STT + LLM + TTS) for the live pipeline |
-| `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | Text-only model for memory summaries / non-live calls |
+| `GEMINI_API_KEY` | — | **Required**. API key from Google AI Studio. |
+| `RENDER_MODE` | `musetalk` | `musetalk`, `3d`, or `pinscreen`. |
+| `AGENT_NAME` | `Vaani` | Name of the AI avatar. |
+| `AGENT_VOICE` | `Puck` | Puck, Charon, Kore, Fenrir, Aoede. |
+| `OFFICE_ROOM_URL` | `/office_room.glb` | URL to the environment GLB. |
+| `AVATAR_3D_URL` | `/avatar.glb` | URL to the avatar GLB. |
+| `ADMIN_PASSWORD` | `admin2026` | Password for the admin panel (`/#admin`). |
 
-### Agent persona & server
-
-| Variable | Default | Description |
-|---|---|---|
-| `AGENT_NAME` | `Vaani` | Avatar display name (also used in the system prompt) |
-| `AGENT_ROLE` | `Your AI Assistant` | Role shown to the model |
-| `AGENT_VOICE` | `Puck` | Gemini voice: Puck, Charon, Kore, Fenrir, Aoede |
-| `BACKEND_PORT` | `8000` | Backend server port |
-| `FRONTEND_PORT` | `5173` | Frontend dev server port |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed browser origins |
-| `ADMIN_PASSWORD` | `admin2026` | Password for the admin panel at `/#admin` (read by `backend/main.py`). Change for any real deployment. |
-
-### MuseTalk lip sync (GPU only — ignored on Mac/CPU)
-
-| Variable | Default | Description |
-|---|---|---|
-| `MUSETALK_ENABLED` | `auto` | `auto` enables only if CUDA GPU **and** weights are present; `true` forces on; `false` disables |
-| `MUSETALK_VERSION` | `v15` | Weights version directory under `models/` (MuseTalk V1.5) |
-| `MUSETALK_BATCH_MS` | `200` | Audio batch size for streaming lip sync (ms) |
-| `MUSETALK_GPU_BATCH` | `16` | Frames per GPU forward pass (higher = faster; lower if out-of-memory) |
-| `MUSETALK_FP16` | `true` | float16 inference (~2x faster); set `false` if you see artifacts/NaNs |
-| `MUSETALK_MOUTH_CACHE` | `true` | Reuse generated mouths for repeated visemes (viseme codebook, self-warms) |
-| `MUSETALK_CACHE_SIM` | `0.96` | Cosine similarity threshold for a codebook cache hit |
-| `MUSETALK_CACHE_MAX` | `512` | Max cached visemes |
-| `MOUTH_SCALE` | `1.0` | Mouth fine-tune: scale (`<1` shrinks the generated mouth) |
-| `MOUTH_DX` | `0.0` | Mouth fine-tune: horizontal nudge (fraction of 256) |
-| `MOUTH_DY` | `0.0` | Mouth fine-tune: vertical nudge (fraction of 256) |
-| `MOUTH_MASK_TOP` | `0.50` | Top of the mouth-blend band (fraction of canonical 256 crop) |
-| `MOUTH_MASK_FULL` | `0.62` | Below this the mouth is fully generated; raise/lower if a blend seam shows |
-
-### Persistent memory (both optional)
-
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | — | PostgreSQL URL for face-recognition memory. Leave blank to disable. For Supabase use the **Session pooler** connection string (see note below). |
-| `SUPABASE_URL` | — | Supabase project URL for semantic memory. Blank = fall back to local `data/memory.json`. |
-| `SUPABASE_KEY` | — | Supabase anon key |
-
-### Frontend (set in `frontend/.env.local`, not `.env`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `VITE_BACKEND_URL` | `http://localhost:8000` | Backend URL the Vite dev server proxies to. Set to your ngrok URL for a remote/Kaggle GPU backend. |
+*See `.env.example` for the full list of overrides.*
 
 ---
 
-## Coming from Mac to Windows (or any new machine)
+## Persistent Memory & Face ID
 
-These items are gitignored and must be set up on each machine:
-
-| Item | What to do |
-|---|---|
-| `backend/.venv/` | Run `scripts\setup.bat` — it recreates the venv |
-| `frontend/node_modules/` | `setup.bat` runs `npm install` automatically |
-| `models/` | Run `scripts\download_models.bat` (15-20 min, GPU machines only) |
-| `.env` | Copy your `.env` from the old machine, or re-add your `GEMINI_API_KEY` |
-| `avatar_idle.mp4` | Copy from your Mac to `data\video\` and `frontend\public\` on Windows |
-
----
-
-## Optional: Supabase Memory Layer
-
-Vaani can store conversation summaries with semantic embeddings so Vaani recalls past interactions across sessions.
-
-1. Create a free project at [supabase.com](https://supabase.com)
-2. Open the SQL editor in your Supabase dashboard and run the schema from the top of `backend/memory.py`
-3. Copy your project URL and anon key into `.env`:
-
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
-```
-
-If these variables are blank, Vaani falls back to a local `data/memory.json` file. The app works fully either way.
-
----
-
-## Optional: PostgreSQL Face Recognition Memory
-
-When a `DATABASE_URL` is set, Vaani identifies returning users by face using **OpenCV's built-in YuNet + SFace** models (no dlib, no compilation). On first visit, users are asked their name. On return visits, Vaani greets them by name and uses past conversation summaries as context.
-
-**Local PostgreSQL:**
-
-```
-DATABASE_URL=postgresql://rishii3@localhost:5432/vaani
-```
-
-**Supabase:** use the **Session pooler** connection string, not the direct one. The direct `db.<ref>.supabase.co` hostname frequently fails to resolve (no IPv4), which breaks the connection. In your Supabase dashboard go to **Project Settings -> Database -> Connection string -> Session pooler** and copy that value:
-
-```
-DATABASE_URL=postgresql://postgres.<ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres
-```
-
-The schema is created automatically on first connection. To set up face recognition, just download the two small ONNX models:
-
-```
-scripts\install_face_recognition.bat
-```
-
-(They're also fetched by `scripts\download_models.bat`.) No extra Python packages are needed — `opencv-python` already ships the `FaceDetectorYN` and `FaceRecognizerSF` classes. Matching uses cosine similarity with SFace's recommended 0.363 same-identity threshold.
-
----
-
-## Pre-rendering Common Responses
-
-Add expected responses to `known_responses.txt` (one per line), then:
-
-```bash
-# Mac
-source backend/.venv/bin/activate
-cd backend
-python3 prerender.py
-
-# Windows
-call backend\.venv\Scripts\activate.bat
-cd backend
-python prerender.py
-```
-
-Matching responses play instantly from disk at runtime with no Gemini round-trip.
-
----
-
-## Kaggle Development (GPU via ngrok)
-
-1. Run `kaggle/session_start.py` cells in a Kaggle notebook
-2. Run `kaggle/server_start.py` to get the ngrok tunnel URL
-3. Add `VITE_BACKEND_URL=https://your-ngrok-url.app` to `.env`
-4. Run frontend only locally: `cd frontend && npm run dev`
+Vaani can identify returning users and recall past conversations.
+- **PostgreSQL**: Set `DATABASE_URL` for face-recognition storage.
+- **Supabase**: Set `SUPABASE_URL` and `SUPABASE_KEY` for semantic conversation memory.
 
 ---
 
 ## Troubleshooting
 
-**Blank screen on first load**
-Check that `frontend/src/main.jsx` exists and `index.html` references it. Clear the browser cache and reload.
+- **MuseTalk Error**: Ensure you have Python 3.10 and `nvidia-smi` works.
+- **Blank 3D Screen**: Verify `office_room.glb` exists in `frontend/public/`.
+- **Audio Feedback**: Use headphones to prevent the avatar from hearing its own voice.
+- **Admin Access**: Navigate to `http://localhost:5173/#admin` to manage bot personas and branding.
 
-**App shows Offline**
-The backend is not running or not reachable on port 8000. Start the backend first. Check that `VITE_BACKEND_URL` is not set (leave blank for localhost). The backend terminal should show `Ready. Waiting for connections.`
+---
 
-**Stuck in thinking state after speaking**
-Check the backend terminal for `[GEMINI] Send error` messages. Restart the backend. If it persists, confirm `GEMINI_API_KEY` is valid and the key has access to `gemini-3.1-flash-live-preview`.
-
-**MuseTalk not loading on Windows**
-Run `nvidia-smi` to confirm your GPU and CUDA version are visible. Run `scripts\download_models.bat` if the `models\` folder is empty or missing. Check the backend terminal for `[MUSETALK]` error messages on startup. If `chumpy` failed during setup, install Visual Studio C++ Build Tools and re-run `setup.bat`.
-
-**WebSocket keeps disconnecting**
-The Gemini Live session has a 15-minute limit. The backend renews it automatically. If disconnects happen immediately, check your internet connection and API key quota.
-
-**Avatar video not showing**
-Confirm `avatar_idle.mp4` exists in both `data/video/` and `frontend/public/`. If you only have a still image, convert it to a looped video:
-
-```bash
-ffmpeg -loop 1 -i your_photo.jpg -t 5 -c:v libx264 -pix_fmt yuv420p avatar_idle.mp4
-```
-
-**Boot sequence plays on every refresh**
-This is expected on first load per browser tab. The boot sequence stores a `sessionStorage` flag — it will not replay within the same tab session. Open a new tab to see it again.
-
-**`setup.bat` fails installing MuseTalk / torch packages**
-The venv was almost certainly created with the wrong Python. Run `python --version` — it must report 3.10.x before you run `setup.bat`. With pyenv-win, run `pyenv local 3.10.11` in the project folder, delete `backend\.venv`, and re-run `setup.bat`.
-
-**Database connection fails / hostname does not resolve**
-If `DATABASE_URL` points at Supabase, make sure you used the **Session pooler** string (`...pooler.supabase.com`), not the direct `db.<ref>.supabase.co` host — the direct host often has no IPv4 record and will not resolve. See "PostgreSQL Face Recognition Memory" above.
-
-**`.bat` script errors with a syntax/parsing message**
-The Windows command interpreter chokes on non-ASCII characters (em dashes, curly quotes). All shipped `.bat` files are pure ASCII; if you edit one, keep it ASCII-only.
+© 2024 Deloitte DCIT. All rights reserved.

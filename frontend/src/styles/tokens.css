@@ -4,6 +4,13 @@
 ═══════════════════════════════════════════════ */
 
 :root {
+  /* ── White-label brand tokens (overridden per-tenant at runtime from /config
+        in App.jsx via document.documentElement.style.setProperty). Everything
+        below references these, so re-skinning a tenant is a single source of
+        truth. Defaults = Deloitte green so the demo is unchanged out of the box. ── */
+  --color-brand:  #86BC25;
+  --color-accent: #3D5A8A;
+
   /* ── Brand palette — exact Deloitte values ── */
   --bg-base:     #000000;
   --bg-navy:     #0D0D0D;
@@ -18,17 +25,17 @@
   --text-primary:   #F0F0F0;
   --text-secondary: #A8C070;
   --text-muted:     #4A6030;
-  --text-brand:     #86BC25;
-  --text-blue:      #86BC25;
+  --text-brand:     var(--color-brand);
+  --text-blue:      var(--color-brand);
 
-  /* ── Brand accent colors ── */
-  --green:       #86BC25;
-  --blue:        #86BC25;
+  /* ── Brand accent colors (driven by the white-label tokens above) ── */
+  --green:       var(--color-brand);
+  --blue:        var(--color-brand);
   --teal:        #A0CC40;
   --amber:       #C8A020;
   --error:       #FF4444;
-  --brand-green: #86BC25;
-  --brand-blue:  #86BC25;
+  --brand-green: var(--color-brand);
+  --brand-blue:  var(--color-brand);
 
   /* ── Borders ── */
   --border-subtle:  rgba(134,188,37,0.08);

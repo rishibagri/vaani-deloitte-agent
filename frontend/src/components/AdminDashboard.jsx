@@ -28,10 +28,11 @@ const LANGUAGES = [
 ]
 
 const SECTIONS = [
-  { id: 'branding',  label: 'Company Brand', icon: 'brand'  },
-  { id: 'model',     label: 'AI Model',      icon: 'model'  },
-  { id: 'avatar',    label: 'Avatar',        icon: 'avatar' },
-  { id: 'language',  label: 'Language',      icon: 'lang'   },
+  { id: 'branding',  label: 'Branding',        icon: 'brand'  },
+  { id: 'persona',   label: 'Persona',         icon: 'avatar' },
+  { id: 'model',     label: 'Voice & LLM',     icon: 'model'  },
+  { id: 'avatar',    label: 'Avatar & Render', icon: 'render' },
+  { id: 'language',  label: 'Languages',       icon: 'lang'   },
 ]
 
 function SectionIcon({ name }) {
@@ -39,6 +40,7 @@ function SectionIcon({ name }) {
   if (name === 'brand')  return <svg {...p}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
   if (name === 'model')  return <svg {...p}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
   if (name === 'avatar') return <svg {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a7 7 0 0 1 14 0v1" /></svg>
+  if (name === 'render') return <svg {...p}><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
   if (name === 'lang')   return <svg {...p}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
   return null
 }
@@ -222,6 +224,19 @@ function BrandingSection({ draft, onChange }) {
           <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-sm)', background: draft.primary_color, flexShrink: 0, border: '1px solid var(--border-default)' }} />
         </div>
       </FieldGroup>
+      <FieldGroup>
+        <Label htmlFor="accent">Accent Color</Label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input id="accent" type="color" value={draft.accent_color || '#3D5A8A'}
+            onChange={e => onChange('accent_color', e.target.value)}
+            style={{ width: 38, height: 34, padding: 2, border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', background: 'rgba(1,10,26,0.6)', cursor: 'pointer' }} />
+          <Input value={draft.accent_color} onChange={v => { if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) onChange('accent_color', v) }} placeholder="#3D5A8A" />
+          <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-sm)', background: draft.accent_color || '#3D5A8A', flexShrink: 0, border: '1px solid var(--border-default)' }} />
+        </div>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+          Secondary highlight used across the interface
+        </span>
+      </FieldGroup>
     </div>
   )
 }
@@ -339,19 +354,6 @@ function ModelSection({ draft, onChange, token }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <FieldGroup>
-        <Label htmlFor="ag_name">Agent Name</Label>
-        <Input id="ag_name" value={draft.agent_name} onChange={v => onChange('agent_name', v)} placeholder="Vaani" />
-      </FieldGroup>
-      <FieldGroup>
-        <Label htmlFor="ag_role">Agent Role</Label>
-        <Input id="ag_role" value={draft.agent_role} onChange={v => onChange('agent_role', v)} placeholder="Your AI Assistant" />
-      </FieldGroup>
-      <FieldGroup>
-        <Label htmlFor="ag_welcome">Welcome Message</Label>
-        <Input id="ag_welcome" value={draft.welcome_message} onChange={v => onChange('welcome_message', v)} placeholder={`Hello! I'm ${draft.agent_name || 'Vaani'}, how can I help you today?`} />
-      </FieldGroup>
-      <div style={{ height: 1, background: 'var(--border-subtle)' }} />
-      <FieldGroup>
         <Label htmlFor="llm">Language Model</Label>
         <Select id="llm" value={draft.llm_model} onChange={v => onChange('llm_model', v)} options={MODELS} />
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
@@ -431,12 +433,34 @@ function ModelSection({ draft, onChange, token }) {
           />
         </div>
       )}
+    </div>
+  )
+}
 
+// ── Persona section — agent identity + custom system instructions ─────────
+function PersonaSection({ draft, onChange }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <FieldGroup>
+        <Label htmlFor="ag_name">Agent Name</Label>
+        <Input id="ag_name" value={draft.agent_name} onChange={v => onChange('agent_name', v)} placeholder="Vaani" />
+      </FieldGroup>
+      <FieldGroup>
+        <Label htmlFor="ag_role">Agent Role</Label>
+        <Input id="ag_role" value={draft.agent_role} onChange={v => onChange('agent_role', v)} placeholder="Your AI Assistant" />
+      </FieldGroup>
+      <FieldGroup>
+        <Label htmlFor="ag_welcome">Welcome Message</Label>
+        <Input id="ag_welcome" value={draft.welcome_message} onChange={v => onChange('welcome_message', v)} placeholder={`Hello! I'm ${draft.agent_name || 'Vaani'}, how can I help you today?`} />
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+          Spoken when a visitor first arrives (3D mode). Phrased naturally in the default language.
+        </span>
+      </FieldGroup>
       <div style={{ height: 1, background: 'var(--border-subtle)' }} />
       <FieldGroup>
         <Label htmlFor="sysprompt">Additional System Instructions</Label>
         <Textarea id="sysprompt" value={draft.system_prompt_extra} onChange={v => onChange('system_prompt_extra', v)}
-          placeholder="Custom behavior, persona details, or constraints specific to this company..." rows={5} />
+          placeholder="Custom behavior, persona details, or constraints specific to this company..." rows={6} />
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
           Appended to the base system prompt. Applied to new sessions.
         </span>
@@ -461,12 +485,23 @@ function AvatarSection({ draft, onChange }) {
           onChange={v => onChange('render_mode', v)} options={RENDER_MODES} />
       </FieldGroup>
       {renderMode === '3d' && (
-        <FieldGroup>
-          <Label htmlFor="avatar_3d_url">3D Avatar URL (Ready Player Me .glb)</Label>
-          <Input id="avatar_3d_url" value={draft.avatar_3d_url}
-            onChange={v => onChange('avatar_3d_url', v)}
-            placeholder="https://models.readyplayer.me/your-avatar.glb" />
-        </FieldGroup>
+        <>
+          <FieldGroup>
+            <Label htmlFor="avatar_3d_url">3D Avatar URL (Ready Player Me .glb)</Label>
+            <Input id="avatar_3d_url" value={draft.avatar_3d_url}
+              onChange={v => onChange('avatar_3d_url', v)}
+              placeholder="https://models.readyplayer.me/your-avatar.glb" />
+          </FieldGroup>
+          <FieldGroup>
+            <Label htmlFor="office_room_url">Office Room URL (.glb, optional)</Label>
+            <Input id="office_room_url" value={draft.office_room_url}
+              onChange={v => onChange('office_room_url', v)}
+              placeholder="/office_room.glb" />
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+              Per-tenant 3D backdrop. Leave blank to use the default office room.
+            </span>
+          </FieldGroup>
+        </>
       )}
       {renderMode === 'pinscreen' && (
         <FieldGroup>
@@ -1028,10 +1063,11 @@ function BotEditor({ bot: initialBot, token, onBack, onActivated }) {
           <div style={{ maxWidth: 560 }}>
             {(() => {
               const meta = {
-                branding: ['Company Brand', 'Identity shown across this bot — name, tagline, logo, and accent color.'],
-                model:    ['AI Model', 'Persona, language model, and voice that power live conversations.'],
-                avatar:   ['Avatar', 'How the assistant is rendered and the source video used for lip-sync.'],
-                language: ['Language', 'Default language and the set offered to visitors.'],
+                branding: ['Branding', 'Identity shown across this tenant — name, tagline, logo, brand and accent colors.'],
+                persona:  ['Persona', 'Agent identity, welcome message, and custom system instructions.'],
+                model:    ['Voice & LLM', 'Language model and voice that power live conversations.'],
+                avatar:   ['Avatar & Render', 'How the assistant is rendered, the 3D model/room, and the lip-sync source video.'],
+                language: ['Languages', 'Default language and the set offered to visitors.'],
               }[section] || []
               return (
                 <div style={{ marginBottom: 26, paddingBottom: 18, borderBottom: '1px solid var(--border-subtle)' }}>
@@ -1045,6 +1081,7 @@ function BotEditor({ bot: initialBot, token, onBack, onActivated }) {
               )
             })()}
             {section === 'branding'  && <BrandingSection  draft={draft} onChange={change} />}
+            {section === 'persona'   && <PersonaSection   draft={draft} onChange={change} />}
             {section === 'model'     && <ModelSection     draft={draft} onChange={change} token={token} />}
             {section === 'avatar'    && <AvatarSection    draft={draft} onChange={change} />}
             {section === 'language'  && <LanguageSection  draft={draft} onChange={change} />}

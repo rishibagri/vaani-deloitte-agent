@@ -58,7 +58,7 @@ const INIT_MSGS = [
   'Almost ready...',
 ]
 
-function ConnectingOverlay({ connected, geminiReady }) {
+function ConnectingOverlay({ connected, geminiReady, agentName = 'Vaani', brandLine = 'Deloitte · Avatar Intelligence' }) {
   const [msgIdx, setMsgIdx] = useState(0)
   const [fade,   setFade]   = useState(true)
   const isWaitingForGemini = connected === 'connected' && !geminiReady
@@ -106,8 +106,8 @@ function ConnectingOverlay({ connected, geminiReady }) {
           fontWeight: 700, fontSize: 30, lineHeight: 1,
           letterSpacing: '-0.03em', userSelect: 'none',
         }}>
-          <span style={{ color: 'var(--green, #86BC25)' }}>V</span>
-          <span style={{ color: 'rgba(242,246,252,0.95)' }}>AANI</span>
+          <span style={{ color: 'var(--color-brand, #86BC25)' }}>{(agentName || 'V').charAt(0).toUpperCase()}</span>
+          <span style={{ color: 'rgba(242,246,252,0.95)' }}>{(agentName || 'Vaani').slice(1).toUpperCase()}</span>
         </span>
         <span style={{
           fontFamily: "'JetBrains Mono', monospace",
@@ -115,7 +115,7 @@ function ConnectingOverlay({ connected, geminiReady }) {
           textTransform: 'uppercase',
           color: 'rgba(134,188,37,0.6)',
           paddingRight: '0.42em',
-        }}>Deloitte · Avatar Intelligence</span>
+        }}>{brandLine}</span>
       </div>
 
       {/* Concentric init reticle — precise, engineered, not a generic spinner */}
@@ -194,8 +194,11 @@ function MainApp() {
 
   /* face ID */
   const [identityReady,  setIdentityReady]  = useState(false)
+  const [identity,       setIdentity]       = useState({ known: false, name: '' })
   const [showNameOverlay,setShowNameOverlay]= useState(false)
+  const [hologramType,   setHologramType]   = useState(null)
   const pendingImageRef = useRef(null)
+  const hologramTimerRef = useRef(null)
 
   const videoFrameHandlerRef = useRef(null)
   const clearCanvasRef = useRef(null)
@@ -205,6 +208,27 @@ function MainApp() {
   const facialWeightsRef = useRef(null)
 
   const { status: cameraStatus, captureFrame } = useFaceCapture()
+
+  /* OmniVision: periodically capture and send frames to Gemini when active. */
+  useEffect(() => {
+    if (cameraStatus !== 'ready' || connected !== 'connected') return
+    const interval = setInterval(() => {
+      // Only send frames if we are in a speaking/listening/thinking state (interaction active)
+      if (appState === 'idle') return
+      
+      const dataUrl = captureFrame()
+      if (dataUrl) {
+        // data:image/jpeg;base64,... -> extract raw base64 and convert to binary
+        const base64 = dataUrl.split(',')[1]
+        const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const prefixed = new Uint8Array(binary.length + 1)
+        prefixed[0] = 0x03 // IMAGE_PREFIX
+        prefixed.set(binary, 1)
+        sendBinary(prefixed)
+      }
+    }, 2000) // Every 2 seconds
+    return () => clearInterval(interval)
+  }, [cameraStatus, connected, appState, captureFrame, sendBinary])
 
   const {
     messages, agentStreamBuffer, userInterim, detectedLanguage, handleMessage: handleConvMessage,
@@ -221,6 +245,10 @@ function MainApp() {
     if (msg.type === 'connected') {
       setConnected('connected')
       setSessionRunning(true)
+    } else if (msg.type === 'SHOW_HOLOGRAM') {
+      setHologramType(msg.hologramType)
+      if (hologramTimerRef.current) clearTimeout(hologramTimerRef.current)
+      hologramTimerRef.current = setTimeout(() => setHologramType(null), 15000)
     } else if (msg.type === 'disconnected') {
       setConnected('connecting')
       setSessionRunning(false)
@@ -262,15 +290,21 @@ function MainApp() {
     backendUrl: BACKEND_URL,
   })
 
-  /* Fetch bot config — on mount and on reconnect */
+  /* Fetch bot config — on mount and on reconnect.
+     Drives ALL per-tenant branding: brand + accent colors feed the CSS token
+     layer (tokens.css maps --green/--blue/etc. onto these), the page title
+     reflects the company, so re-skinning a client is fully config-driven. */
   const fetchConfig = useCallback(() => {
     fetch(`${BACKEND_URL}/config`)
       .then(r => r.json())
       .then(cfg => {
         setBotConfig(cfg)
-        if (cfg.primary_color) {
-          document.documentElement.style.setProperty('--color-brand', cfg.primary_color)
-        }
+        const root = document.documentElement.style
+        if (cfg.primary_color) root.setProperty('--color-brand', cfg.primary_color)
+        if (cfg.accent_color)  root.setProperty('--color-accent', cfg.accent_color)
+        const agent = cfg.agent_name || 'Vaani'
+        const company = cfg.company_name ? ` · ${cfg.company_name}` : ''
+        document.title = `${agent}${company}`
       })
       .catch(() => {})
   }, [])
@@ -325,6 +359,7 @@ function MainApp() {
       .then(r => r.json())
       .then(data => {
         if (data.known) {
+          setIdentity({ known: true, name: data.name || '' })
           toast(`Welcome back, ${data.name}!`)
         } else if (!data.reason) {
           pendingImageRef.current = image
@@ -335,6 +370,11 @@ function MainApp() {
       })
       .catch(() => setIdentityReady(true))
   }, [sessionId, cameraStatus, captureFrame])
+
+  /* Avatar reached the front-of-screen mark → ask the backend to greet. */
+  const handleAvatarArrived = useCallback(() => {
+    sendJson({ type: 'avatar_arrived', name: identity.name, known: identity.known })
+  }, [sendJson, identity])
 
   const onMicChunk = useCallback((buf) => sendBinary(buf), [sendBinary])
 
@@ -363,7 +403,7 @@ function MainApp() {
     })
       .then(r => r.json())
       .then(data => {
-        if (data.enrolled)                               toast(`Nice to meet you, ${data.name}!`)
+        if (data.enrolled)                             { setIdentity({ known: true, name: data.name || name || '' }); toast(`Nice to meet you, ${data.name}!`) }
         else if (data.reason === 'no_face_detected')     toast('No face detected — memory not saved', 'error')
         else if (data.reason?.startsWith('db'))          toast('Memory unavailable', 'error')
       })
@@ -404,7 +444,7 @@ function MainApp() {
 
   return (
     <>
-      {!isPinWall && <ParticleCanvas appState={appState} />}
+      {!isPinWall && botConfig?.render_mode !== '3d' && <ParticleCanvas appState={appState} />}
 
       {!bootDone && (
         <BootSequence onComplete={() => setBootDone(true)} />
@@ -412,7 +452,14 @@ function MainApp() {
 
       {bootDone && (connected !== 'connected' || !geminiReady || !botConfig) && (
         isPinWall ? (
-          <ConnectingOverlay connected={connected} geminiReady={geminiReady} />
+          <ConnectingOverlay
+            connected={connected}
+            geminiReady={geminiReady}
+            agentName={botConfig?.agent_name || 'Vaani'}
+            brandLine={botConfig?.company_name
+              ? `${botConfig.company_name}${botConfig.company_tagline ? ` · ${botConfig.company_tagline}` : ''}`
+              : 'Deloitte · Avatar Intelligence'}
+          />
         ) : (
           <AdvancedConnectingOverlay connected={connected} geminiReady={geminiReady} mode={botConfig?.render_mode} />
         )
@@ -453,17 +500,24 @@ function MainApp() {
         <StatusBadge appState={appState} connected={connected} />
       </div>
 
-      {/* Branding Label — Top Right */}
+      {/* Branding Label — Top Right (fully per-tenant from /config) */}
       <div style={{
         position: 'fixed', top: 100, right: 40, zIndex: 100,
-        textAlign: 'right', opacity: mainVisible ? 0.6 : 0, transition: 'opacity 500ms'
+        display: 'flex', alignItems: 'center', gap: 12,
+        textAlign: 'right', opacity: mainVisible ? 0.85 : 0, transition: 'opacity 500ms'
       }}>
-        <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, color: '#86BC25', letterSpacing: '0.2em' }}>
-          DELOITTE DCIT
+        <div>
+          <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, color: 'var(--color-brand, #86BC25)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+            {botConfig?.company_name || 'Deloitte'}
+          </div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'white', letterSpacing: '0.1em' }}>
+            {botConfig?.company_tagline || 'DCIT · Avatar Systems'}
+          </div>
         </div>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'white', letterSpacing: '0.1em' }}>
-          AVATAR SYSTEMS · INDIA
-        </div>
+        {botConfig?.logo_url && (
+          <img src={botConfig.logo_url} alt={botConfig?.company_name || 'logo'}
+            style={{ maxHeight: 34, maxWidth: 120, objectFit: 'contain' }} />
+        )}
       </div>
 
       <main
@@ -497,6 +551,10 @@ function MainApp() {
               getLevel={audioPlayback.getLevel}
               getLipsync={audioPlayback.getLipsync}
               avatarUrl={botConfig?.avatar_3d_url || null}
+              roomUrl={botConfig?.office_room_url || undefined}
+              hologramType={hologramType}
+              trigger={identityReady && connected === 'connected'}
+              onArrived={handleAvatarArrived}
             />
           ) : (
             <AvatarDisplay

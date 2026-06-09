@@ -26,6 +26,7 @@ BOT_DEFAULTS: dict = {
     "company_tagline":   "DCIT · Avatar Systems",
     "logo_url":          None,
     "primary_color":     "#86BC25",
+    "accent_color":      "#3D5A8A",
     "agent_name":        "Vaani",
     "agent_role":        "Your AI Assistant",
     "agent_voice":       "Puck",
@@ -36,11 +37,24 @@ BOT_DEFAULTS: dict = {
     "avatar_video_url":  None,
     "render_mode":       "musetalk",
     "avatar_3d_url":     "",
+    "office_room_url":   "",
     "pinscreen_image_url": "",
     "welcome_message":   "",
     "created_at":        None,
     "updated_at":        None,
 }
+
+# Fields exposed to the unauthenticated /config endpoint and the public UI.
+# (Excludes operator-only fields like agent_voice, llm_model, system_prompt_extra.)
+PUBLIC_FIELDS = (
+    "id", "company_name", "company_tagline", "logo_url",
+    "primary_color", "accent_color",
+    "agent_name", "agent_role", "default_language", "supported_languages",
+    "avatar_video_url", "render_mode", "avatar_3d_url", "office_room_url",
+    "pinscreen_image_url", "welcome_message",
+)
+
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 _ALLOWED_VOICES = {"Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Perseus"}
 _ALLOWED_RENDER_MODES = {"musetalk", "3d", "pinscreen"}
@@ -83,6 +97,20 @@ def _validate_in_place(cfg: dict) -> None:
         cfg["llm_model"] = BOT_DEFAULTS["llm_model"]
     if cfg.get("render_mode") not in _ALLOWED_RENDER_MODES:
         cfg["render_mode"] = "musetalk"
+    # Clamp colors to valid 6-digit hex so a bad value can't break the UI's
+    # CSS custom properties; fall back to the brand defaults.
+    for key in ("primary_color", "accent_color"):
+        val = cfg.get(key)
+        if not (isinstance(val, str) and _HEX_RE.match(val)):
+            cfg[key] = BOT_DEFAULTS[key]
+    # Keep supported_languages a non-empty list; always include the default language.
+    langs = cfg.get("supported_languages")
+    if not isinstance(langs, list) or not langs:
+        langs = list(BOT_DEFAULTS["supported_languages"])
+    default_lang = cfg.get("default_language") or "en"
+    if default_lang not in langs:
+        langs = [default_lang, *langs]
+    cfg["supported_languages"] = langs
 
 
 def _read_bot_file(slug: str) -> Optional[dict]:
@@ -145,6 +173,18 @@ def get_active() -> dict:
         bot = _read_bot_file("default")
     _cache[slug] = bot
     return bot
+
+
+def get_active_company_id() -> str:
+    """Tenant id used to namespace per-company data (face + conversation memory).
+
+    The bot slug doubles as the company_id so every tenant's visitors and
+    conversation history stay isolated from every other tenant's.
+    """
+    try:
+        return get_active_slug()
+    except Exception:
+        return "default"
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────
@@ -221,12 +261,7 @@ def public_view(bot: Optional[dict] = None) -> dict:
     """Safe subset for unauthenticated /config endpoint."""
     if bot is None:
         bot = get_active()
-    return {k: bot.get(k) for k in (
-        "id", "company_name", "company_tagline", "logo_url", "primary_color",
-        "agent_name", "agent_role", "default_language", "supported_languages",
-        "avatar_video_url", "render_mode", "avatar_3d_url", "pinscreen_image_url",
-        "welcome_message",
-    )}
+    return {k: bot.get(k) for k in PUBLIC_FIELDS}
 
 
 # ── startup ───────────────────────────────────────────────────────────

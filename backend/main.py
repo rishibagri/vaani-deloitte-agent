@@ -208,8 +208,12 @@ async def identify_user(session_id: str, body: FaceImageBody):
         return {"known": False, "reason": "db_unavailable"}
 
     try:
+        from bot_config import get_active_company_id
+        company_id = get_active_company_id()
         loop = asyncio.get_event_loop()
-        user = await loop.run_in_executor(None, face_memory.identify, body.image)
+        user = await loop.run_in_executor(
+            None, lambda: face_memory.identify(body.image, company_id)
+        )
     except Exception as e:
         print(f"[MEMORY] identify error: {e}")
         return {"known": False, "reason": "db_unavailable"}
@@ -230,10 +234,14 @@ async def enroll_user(session_id: str, body: EnrollBody):
         return {"enrolled": False, "reason": "db_unavailable"}
 
     try:
+        from bot_config import get_active_company_id
+        company_id = get_active_company_id()
         loop = asyncio.get_event_loop()
         user = await loop.run_in_executor(
             None,
-            lambda: face_memory.enroll(body.image, body.name, body.role),
+            lambda: face_memory.enroll(
+                body.image, body.name, body.role, company_id=company_id
+            ),
         )
     except Exception as e:
         print(f"[MEMORY] enroll error: {e}")
@@ -267,6 +275,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         except Exception as e:
             print(f"[BROWSER] send_json error: {e}")
 
+    # Active tenant id — used to namespace conversation memory so tenants
+    # never read each other's history.
+    try:
+        from bot_config import get_active_company_id
+        company_id = get_active_company_id()
+    except Exception:
+        company_id = "default"
+
     user_id = _session_user_map.pop(session_id, None)
     user_context = ""
     if user_id is not None and face_memory is not None:
@@ -275,10 +291,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             None, face_memory.get_context_prompt, user_id
         )
 
-    # Append semantic memory context (Supabase or local JSON)
+    # Append semantic memory context (Supabase or local JSON), scoped to tenant.
     try:
         from memory import get_relevant_context
-        mem_ctx = await get_relevant_context("general conversation", limit=3)
+        mem_ctx = await get_relevant_context(
+            "general conversation", limit=3, company_id=company_id
+        )
         if mem_ctx:
             user_context = f"{user_context}\n\n{mem_ctx}".strip() if user_context else mem_ctx
     except Exception as e:
@@ -293,6 +311,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         user_id=user_id,
         user_context=user_context,
         face_memory=face_memory,
+        company_id=company_id,
     )
 
     active_sessions[session_id] = pipeline

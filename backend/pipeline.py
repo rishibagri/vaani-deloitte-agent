@@ -65,10 +65,11 @@ if TYPE_CHECKING:
     from face_memory import FaceMemory
 
 
-# 0x01 prefix = audio frame, 0x02 prefix = video frame
+# 0x01 prefix = audio frame, 0x02 prefix = video frame, 0x03 prefix = vision/image frame
 # single byte prefix lets the browser route binary messages without JSON parsing
 AUDIO_PREFIX = bytes([0x01])
 VIDEO_PREFIX = bytes([0x02])
+IMAGE_PREFIX = bytes([0x03])
 
 # how many samples make up one batch at 16kHz
 BATCH_SAMPLES = int((BATCH_MS / 1000) * SAMPLE_RATE_MUSETALK)
@@ -130,6 +131,7 @@ class SessionPipeline:
         user_id: Optional[int] = None,
         user_context: str = "",
         face_memory: "Optional[FaceMemory]" = None,
+        company_id: str = "default",
     ):
         self.session_id = session_id
         self.loop_cache = loop_cache
@@ -138,6 +140,7 @@ class SessionPipeline:
         self.send_json = send_json
         self.user_id = user_id
         self._face_memory = face_memory
+        self._company_id = company_id
 
         self.agent = GeminiAgent(session_id, user_context=user_context)
         self.known_responses = _load_known_responses()
@@ -149,6 +152,7 @@ class SessionPipeline:
         self._audio_sent_in_turn = False
         self._turn_epoch = 0   # bumped on barge-in to drop stale audio/video frames
         self._suppress_output = False  # True between a barge-in and the next user turn
+        self._greeted = False  # proactive greeting fires at most once per session
         self._fw_task = None   # facial-blendshape streaming task (Phase 5 stub)
         self._current_audio_level = 0.0
         # MuseTalk audio coalescing: accumulate 24kHz PCM and run lip-sync once per
@@ -234,9 +238,14 @@ class SessionPipeline:
         Text/JSON = control commands (start_listening, stop_listening, etc.)
         """
         if isinstance(data, bytes):
-            # raw PCM from browser mic
-            self._audio_sent_in_turn = True
-            await self.agent.send_audio(data)
+            # raw PCM from browser mic OR image frame
+            prefix = data[0]
+            payload = data[1:]
+            if prefix == 0x01: # Audio
+                self._audio_sent_in_turn = True
+                await self.agent.send_audio(payload)
+            elif prefix == 0x03: # Image (OmniVision)
+                await self.agent.send_image(payload)
         else:
             try:
                 msg = json.loads(data)
@@ -277,6 +286,35 @@ class SessionPipeline:
 
             elif msg_type == "set_language":
                 self.agent.language = msg.get("code", "en")
+
+            elif msg_type == "avatar_arrived":
+                # The 3D avatar finished its sit→stand→walk arrival animation.
+                # Greet the user proactively through the normal Gemini path.
+                await self.greet(
+                    name=(msg.get("name") or "").strip(),
+                    known=bool(msg.get("known")),
+                )
+
+    async def greet(self, name: str = "", known: bool = False):
+        """Fire exactly one proactive greeting when the avatar 'arrives'.
+
+        Guards:
+          - `_greeted` ensures this only ever runs once per session, so a duplicate
+            avatar_arrived message (or a reconnect) can't trigger a second greeting.
+          - We only greet from a quiescent state ('idle'/'listening'): if a turn is
+            already in flight (e.g. the user beat the animation and started talking)
+            we skip rather than stomp it — barge-in / user intent wins.
+        """
+        if self._greeted or not self._running:
+            return
+        if self._state not in ("idle", "listening", ""):
+            # A turn is already underway — don't interrupt it with a greeting.
+            self._greeted = True
+            return
+        self._greeted = True
+        self._suppress_output = False
+        await self._set_state("thinking")
+        await self.agent.trigger_greeting(name=name, known=known)
 
     def _flush_output_queue(self):
         """Drop all pending items from the Gemini output queue (used on barge-in)."""
@@ -349,8 +387,18 @@ class SessionPipeline:
                     self._mt_buf.clear()  # discard any residual buffer on mode switch
 
             elif item_type == "transcript_agent":
-                current_transcript += item.get("text", "")
+                text = item.get("text", "")
+                current_transcript += text
                 await self.send_json(item)
+
+                # Check for hologram trigger: [HOLOGRAM: type]
+                if "[HOLOGRAM:" in text:
+                    import re
+                    match = re.search(r"\[HOLOGRAM:\s*([^\]]+)\]", text)
+                    if match:
+                        h_type = match.group(1).strip()
+                        print(f"[PIPELINE] Hologram triggered: {h_type}")
+                        await self.send_json({"type": "SHOW_HOLOGRAM", "hologramType": h_type})
 
                 # check pre-rendered lookup now that we have partial transcript
                 if not item.get("streaming", True):
@@ -438,7 +486,10 @@ class SessionPipeline:
             try:
                 from memory import save_conversation
                 asyncio.create_task(
-                    save_conversation(self.session_id, self.agent.transcript, self._current_language)
+                    save_conversation(
+                        self.session_id, self.agent.transcript,
+                        self._current_language, company_id=self._company_id,
+                    )
                 )
             except Exception as e:
                 print(f"[PIPELINE] Background memory save error: {e}")

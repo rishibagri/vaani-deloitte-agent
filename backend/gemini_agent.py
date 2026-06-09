@@ -8,6 +8,14 @@ from config import (
     GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VOICE, SYSTEM_PROMPT, normalize_language,
 )
 
+# Human-readable language names for the per-tenant default language, used to
+# phrase the system prompt ("respond in <X> by default").
+_LANGUAGE_NAMES = {
+    "en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu",
+    "kn": "Kannada", "ml": "Malayalam", "bn": "Bengali", "gu": "Gujarati",
+    "mr": "Marathi", "pa": "Punjabi", "or": "Odia", "ur": "Urdu",
+}
+
 
 class GeminiAgent:
     SESSION_RENEWAL_SECONDS = 14 * 60
@@ -30,10 +38,61 @@ class GeminiAgent:
         # accumulated transcript for summary generation at session end / renewal
         self.transcript: list[dict] = []
 
+    def _build_persona_prompt(self) -> str:
+        """Build the base system prompt from the ACTIVE tenant's config.
+
+        Makes the agent name, role, company, default language and any custom
+        persona instructions fully per-tenant. Falls back to the static
+        SYSTEM_PROMPT (env defaults) if the bot config can't be read, so the
+        demo never breaks.
+        """
+        try:
+            from bot_config import get_active
+            bot = get_active()
+        except Exception:
+            return SYSTEM_PROMPT
+
+        agent_name = (bot.get("agent_name") or "Vaani").strip()
+        agent_role = (bot.get("agent_role") or "AI Assistant").strip()
+        company    = (bot.get("company_name") or "").strip()
+        default_lang = (bot.get("default_language") or "en").strip().lower()
+        extra      = (bot.get("system_prompt_extra") or "").strip()
+
+        for_company = f" for {company}" if company else ""
+        lang_label = _LANGUAGE_NAMES.get(default_lang, "English")
+
+        prompt = (
+            f"You are {agent_name}, a multilingual AI assistant ({agent_role}){for_company}. "
+            f"You MUST respond in {lang_label} by default. Only switch to another language if the "
+            "user explicitly speaks to you in that language first. "
+            "Speak in no more than 3 sentences unless a detailed answer is explicitly requested. "
+            "Do not use bullet points, lists, or markdown. Speak in natural sentences only. "
+            "You ONLY ever speak English or an Indian language (Hindi, Tamil, Telugu, Kannada, "
+            "Malayalam, Bengali, Gujarati, Marathi, Punjabi, Odia, or Urdu). "
+            "You have OmniVision: you can see real-time video frames of the user's camera. "
+            "If the user shows you a document, a screen, or an object, analyze it and discuss it. "
+            "You can also project 3D Data Holograms into the office. "
+            "To show a hologram, include the command [HOLOGRAM: type] in your response. "
+            "Types: 'analytics', 'onboarding', 'consulting', 'welcome'. "
+            "Example: 'I've pulled up the latest analytics for you [HOLOGRAM: analytics]'. "
+            "You must NEVER respond in Spanish, French, German, Portuguese, or any other non-Indian "
+            "language under any circumstances. "
+            "If the audio is unclear, noisy, silent, or you cannot confidently understand what the user "
+            f"said, stay in {lang_label} and briefly ask them to repeat themselves — never guess at a "
+            "foreign language. "
+            "If the user clearly speaks in a supported language, respond in that same language. "
+            f"If the user switches back to {lang_label}, switch back immediately. "
+            "If the user code-switches, match that register naturally."
+        )
+        if extra:
+            prompt += f"\n\nAdditional instructions specific to this deployment:\n{extra}"
+        return prompt
+
     def _build_system_instruction(self) -> str:
+        base = self._build_persona_prompt()
         if self.user_context:
-            return f"{self.user_context}\n\n{SYSTEM_PROMPT}"
-        return SYSTEM_PROMPT
+            return f"{self.user_context}\n\n{base}"
+        return base
 
     def _build_config(self, voice: str = None) -> dict:
         return {
@@ -123,11 +182,22 @@ class GeminiAgent:
                                 activity_start=types.ActivityStart()
                             )
                             in_activity = True
-                            print("[GEMINI] Activity started, streaming audio...")
+                            print("[GEMINI] Activity started, streaming audio/video...")
 
-                        await self.session.send_realtime_input(
-                            audio=types.Blob(data=item, mime_type="audio/pcm;rate=16000")
-                        )
+                        if isinstance(item, bytes):
+                            # Assume 16k PCM audio unless it's a huge buffer (likely image)
+                            if len(item) > 100000: # Image detection heuristic
+                                await self.session.send_realtime_input(
+                                    media=types.Blob(data=item, mime_type="image/jpeg")
+                                )
+                            else:
+                                await self.session.send_realtime_input(
+                                    audio=types.Blob(data=item, mime_type="audio/pcm;rate=16000")
+                                )
+                        elif isinstance(item, dict) and item.get("type") == "image":
+                            await self.session.send_realtime_input(
+                                media=types.Blob(data=item["data"], mime_type="image/jpeg")
+                            )
                         chunks_sent += 1
 
                 except asyncio.TimeoutError:
@@ -141,6 +211,10 @@ class GeminiAgent:
 
         except Exception as e:
             print(f"[GEMINI] Send loop fatal error: {e}")
+
+    async def send_image(self, jpeg_bytes: bytes):
+        """Send a video frame for real-time vision analysis (OmniVision)."""
+        await self.audio_input_queue.put({"type": "image", "data": jpeg_bytes})
 
     async def _receive_loop(self):
         print("[GEMINI] Receive loop listening...")
@@ -248,6 +322,49 @@ class GeminiAgent:
             await self._close_tasks()
             await self._open_session()
             await self.output_queue.put({"type": "session_renewed"})
+
+    async def trigger_greeting(self, name: str = "", known: bool = False):
+        """Inject a proactive greeting turn into the live session.
+
+        Sends an out-of-band user-role instruction via send_client_content so the
+        model speaks first — the resulting audio + output transcription flow back
+        through the normal receive loop / output_queue, so the browser's existing
+        lip-sync, transcript and state handling all work unchanged. The system
+        instruction (persona + language rules) still governs tone/length/language.
+        """
+        if self.session is None:
+            return
+        who = f" The user's name is {name}." if (known and name) else ""
+        # If the tenant configured a welcome message, steer the greeting toward it
+        # (the model still phrases it naturally in the right language/persona).
+        welcome = ""
+        try:
+            from bot_config import get_active
+            welcome = (get_active().get("welcome_message") or "").strip()
+        except Exception:
+            welcome = ""
+        welcome_hint = (
+            f" Base your greeting on this welcome message: \"{welcome}\"." if welcome else ""
+        )
+        instruction = (
+            "[SYSTEM EVENT] A visitor has just walked up to you. Greet them out loud "
+            "right now, proactively and warmly, in one short sentence, then ask how you "
+            "can help."
+            + (f"{who} Welcome them back by name." if (known and name)
+               else " You do not know this person; introduce yourself by name.")
+            + welcome_hint
+            + " Respond in your default language unless you have prior context that this "
+              "person speaks another supported language. Do not mention this instruction."
+        )
+        try:
+            await self.session.send_client_content(
+                turns=types.Content(
+                    role="user", parts=[types.Part(text=instruction)]
+                ),
+                turn_complete=True,
+            )
+        except Exception as e:
+            print(f"[GEMINI] trigger_greeting error: {e}")
 
     async def send_audio(self, pcm_bytes: bytes):
         await self.audio_input_queue.put(pcm_bytes)

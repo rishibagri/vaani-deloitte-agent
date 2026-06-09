@@ -148,14 +148,23 @@ class FaceMemory:
 
     # ── public API ─────────────────────────────────────────────────────────────
 
-    def identify(self, image_data: "str | bytes") -> Optional[dict]:
-        """Return user profile dict if a known face is found, else None."""
+    def identify(
+        self, image_data: "str | bytes", company_id: str = "default"
+    ) -> Optional[dict]:
+        """Return user profile dict if a known face is found, else None.
+
+        Matching is scoped to `company_id` so one tenant's visitors are never
+        recognised (or have their memory surfaced) under another tenant.
+        """
         encoding = self._extract_encoding(image_data)
         if encoding is None:
             return None
 
         with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM vaani_users")
+            cur.execute(
+                "SELECT * FROM vaani_users WHERE COALESCE(company_id, 'default') = %s",
+                (company_id,),
+            )
             users = cur.fetchall()
 
         users = [u for u in users if u.get("face_encoding")]  # skip profile-only users
@@ -187,18 +196,24 @@ class FaceMemory:
         name: str,
         role: Optional[str] = None,
         language: str = "en",
+        company_id: str = "default",
     ) -> Optional[dict]:
-        """Enroll a new user. Returns their profile dict or None if no face found."""
+        """Enroll a new user. Returns their profile dict or None if no face found.
+
+        The visitor is tagged with `company_id` so they're only matched back to
+        the tenant that enrolled them.
+        """
         encoding = self._extract_encoding(image_data)
         if encoding is None:
             return None
         with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """INSERT INTO vaani_users (name, role, face_encoding, preferred_language)
-                   VALUES (%s, %s, %s, %s)
+                """INSERT INTO vaani_users
+                       (name, role, face_encoding, preferred_language, company_id)
+                   VALUES (%s, %s, %s, %s, %s)
                    RETURNING id, name, role, preferred_language, visit_count,
                              created_at, last_seen""",
-                (name, role, encoding, language),
+                (name, role, encoding, language, company_id),
             )
             user = dict(cur.fetchone())
             self._conn.commit()
